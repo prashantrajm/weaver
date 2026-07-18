@@ -35,6 +35,9 @@ public final class Flow: Identifiable, @unchecked Sendable {
     /// ever seen). Usually certificate pinning, or the CA isn't trusted on the
     /// device. See TLSHandshakeMonitor.
     public var tlsInterceptionFailed: Bool = false
+    /// The host is on the bypass list, so it was tunnelled through without
+    /// decryption (the app's own TLS is left intact). See BlindTunnel.
+    public var bypassed: Bool = false
 
     // WebSocket (populated for upgraded connections; see WebSocketInterception).
     public var isWebSocket: Bool = false

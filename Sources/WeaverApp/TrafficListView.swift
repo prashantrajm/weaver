@@ -40,6 +40,7 @@ struct TypeFilterTabs: View {
 /// The main traffic table (M1.3). Columns: status · method · URL · client ·
 /// status code · duration · size · SSL.
 struct TrafficListView: View {
+    @EnvironmentObject var controller: CaptureController
     let flows: [Flow]
     @Binding var selection: Flow.ID?
 
@@ -73,7 +74,12 @@ struct TrafficListView: View {
             .width(min: 80, ideal: 110)
 
             TableColumn("Status") { flow in
-                if flow.tlsInterceptionFailed {
+                if flow.bypassed {
+                    Text("BYPASS")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .help("Tunnelled without decryption (host on bypass list)")
+                } else if flow.tlsInterceptionFailed {
                     Text("PINNED")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(.orange)
@@ -128,6 +134,21 @@ struct TrafficListView: View {
         }
         .tableStyle(.inset)
         .font(.system(size: 12))
+        .contextMenu(forSelectionType: Flow.ID.self) { ids in
+            if let id = ids.first, let flow = flows.first(where: { $0.id == id }) {
+                Button("Bypass \(flow.host)") { controller.addBypass(flow.host) }
+                if let wildcard = parentWildcard(flow.host) {
+                    Button("Bypass \(wildcard)") { controller.addBypass(wildcard) }
+                }
+            }
+        }
+    }
+
+    /// `api.example.com` → `*.example.com` (nil for apex/short hosts and IPs).
+    private func parentWildcard(_ host: String) -> String? {
+        let parts = host.split(separator: ".")
+        guard parts.count >= 3, UInt8(parts.last ?? "") == nil else { return nil }
+        return "*." + parts.dropFirst().joined(separator: ".")
     }
 
     private func protoLabel(_ flow: Flow) -> String {

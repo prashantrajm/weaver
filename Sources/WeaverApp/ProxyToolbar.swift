@@ -5,6 +5,7 @@ import WeaverCore
 /// trust + export controls on the right.
 struct ProxyToolbar: View {
     @EnvironmentObject var controller: CaptureController
+    @State private var showBypass = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -31,6 +32,17 @@ struct ProxyToolbar: View {
             Spacer()
 
             trustControl
+
+            Button {
+                showBypass = true
+            } label: {
+                Label("Bypass\(controller.bypassList.isEmpty ? "" : " (\(controller.bypassList.count))")",
+                      systemImage: "lock.open")
+            }
+            .help("Manage hosts tunnelled without decryption")
+            .popover(isPresented: $showBypass, arrowEdge: .bottom) {
+                BypassEditorView().environmentObject(controller)
+            }
 
             Menu {
                 Toggle("Block HTTP/3 (force TCP for capture)", isOn: $controller.blockHTTP3)

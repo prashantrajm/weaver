@@ -36,6 +36,7 @@ public final class ProxyServer: @unchecked Sendable {
     public let port: Int
     private let ca: CertificateAuthority
     private weak var events: ProxyEventHandler?
+    private let filter: HostFilter
 
     private let group: EventLoopGroup
     private var channel: Channel?
@@ -43,11 +44,13 @@ public final class ProxyServer: @unchecked Sendable {
 
     public private(set) var state: ProxyState = .stopped
 
-    public init(host: String = "127.0.0.1", port: Int = 9090, ca: CertificateAuthority, events: ProxyEventHandler?) {
+    public init(host: String = "127.0.0.1", port: Int = 9090, ca: CertificateAuthority,
+                events: ProxyEventHandler?, filter: HostFilter = HostFilter()) {
         self.host = host
         self.port = port
         self.ca = ca
         self.events = events
+        self.filter = filter
         self.group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
 
         var clientConfig = HTTPClient.Configuration()
@@ -61,8 +64,8 @@ public final class ProxyServer: @unchecked Sendable {
             .serverChannelOption(ChannelOptions.backlog, value: 256)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-            .childChannelInitializer { [ca, events, httpClient] channel in
-                let handler = ProxyConnectionHandler(ca: ca, events: events, httpClient: httpClient)
+            .childChannelInitializer { [ca, events, httpClient, filter] channel in
+                let handler = ProxyConnectionHandler(ca: ca, events: events, httpClient: httpClient, filter: filter)
                 do {
                     let sync = channel.pipeline.syncOperations
                     try sync.addHandler(

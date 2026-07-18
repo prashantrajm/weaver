@@ -23,6 +23,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     private let interceptedHost: String?
     private let interceptedPort: Int
     private let httpVersionLabel: String
+    private let filter: HostFilter?
 
     // Per-request accumulation.
     private var requestHead: HTTPRequestHead?
@@ -30,13 +31,14 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
 
     init(ca: CertificateAuthority, events: ProxyEventHandler?, httpClient: HTTPClient,
          interceptedHost: String? = nil, interceptedPort: Int = 443,
-         httpVersionLabel: String = "HTTP/1.1") {
+         httpVersionLabel: String = "HTTP/1.1", filter: HostFilter? = nil) {
         self.ca = ca
         self.events = events
         self.httpClient = httpClient
         self.interceptedHost = interceptedHost
         self.interceptedPort = interceptedPort
         self.httpVersionLabel = httpVersionLabel
+        self.filter = filter
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -44,7 +46,17 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         switch part {
         case .head(let head):
             if interceptedHost == nil && head.method == .CONNECT {
-                startTLSInterception(context: context, authority: head.uri)
+                let (host, port) = Self.splitAuthority(head.uri, defaultPort: 443)
+                if filter?.shouldBypass(host) == true {
+                    // Acknowledge the tunnel, then relay bytes straight through.
+                    context.write(wrapOutboundOut(.head(HTTPResponseHead(
+                        version: .http1_1,
+                        status: .custom(code: 200, reasonPhrase: "Connection Established")))), promise: nil)
+                    context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+                    BlindTunnel.start(clientChannel: context.channel, host: host, port: port, events: events)
+                } else {
+                    startTLSInterception(context: context, authority: head.uri)
+                }
                 return
             }
             requestHead = head

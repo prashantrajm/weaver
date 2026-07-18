@@ -29,6 +29,10 @@ final class CaptureController: ObservableObject {
     /// The address to point a device at: the LAN IP if known, else loopback.
     var deviceProxyHost: String { lanAddress ?? "127.0.0.1" }
 
+    // Hosts to tunnel without decryption (pinned/noisy). Shared with the proxy.
+    let hostFilter = HostFilter()
+    @Published private(set) var bypassList: [String] = []
+
     private var caManager: CAManager?
     private var server: ProxyServer?
     private var eventBridge: EventBridge?
@@ -70,7 +74,7 @@ final class CaptureController: ObservableObject {
         self.eventBridge = bridge
         self.lanAddress = LocalAddress.primaryIPv4()
         let server = ProxyServer(host: listenHost, port: listenPort,
-                                 ca: caManager.authority, events: bridge)
+                                 ca: caManager.authority, events: bridge, filter: hostFilter)
         do {
             try server.start()
             self.server = server
@@ -95,6 +99,20 @@ final class CaptureController: ObservableObject {
         flows.removeAll()
         bytesIn = 0
         bytesOut = 0
+    }
+
+    // MARK: - Bypass list
+
+    func addBypass(_ pattern: String) {
+        let p = pattern.trimmingCharacters(in: .whitespaces)
+        guard !p.isEmpty else { return }
+        hostFilter.addBypass(p)
+        bypassList = hostFilter.bypassPatterns
+    }
+
+    func removeBypass(_ pattern: String) {
+        hostFilter.removeBypass(pattern)
+        bypassList = hostFilter.bypassPatterns
     }
 
     // MARK: - Trust management

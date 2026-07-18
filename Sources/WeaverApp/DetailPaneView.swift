@@ -11,7 +11,11 @@ struct DetailPaneView: View {
             VStack(spacing: 0) {
                 summaryBar(flow)
                 Divider()
-                if flow.tlsInterceptionFailed {
+                if flow.bypassed {
+                    NoticeView(icon: "lock.open", tint: .secondary,
+                               title: "Tunnelled \(flow.host) without decryption",
+                               message: flow.error ?? "This host is on the bypass list, so its traffic passed through untouched — the app's own TLS is intact and no plaintext was captured.")
+                } else if flow.tlsInterceptionFailed {
                     PinningExplanationView(flow: flow)
                 } else if flow.isWebSocket {
                     HSplitView {
@@ -227,6 +231,27 @@ private struct PinningExplanationView: View {
             Text(text).font(.system(size: 12)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// Simple centered notice for flows with no decrypted content to show.
+private struct NoticeView: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    let message: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 20)).foregroundStyle(tint)
+                Text(title).font(.system(size: 14, weight: .semibold))
+            }
+            Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
