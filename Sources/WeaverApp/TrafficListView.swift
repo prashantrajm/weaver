@@ -5,7 +5,7 @@ import WeaverCore
 struct TypeFilterTabs: View {
     @Binding var selection: FlowKind?
 
-    private let kinds: [FlowKind] = [.http, .https, .json, .form, .xml, .js, .css, .document, .media]
+    private let kinds: [FlowKind] = [.http, .https, .websocket, .json, .form, .xml, .js, .css, .document, .media]
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -105,9 +105,21 @@ struct TrafficListView: View {
                     .foregroundStyle(flow.isTLS ? .green : .secondary)
             }
             .width(34)
+
+            TableColumn("Proto") { flow in
+                Text(protoLabel(flow))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(flow.isWebSocket ? .purple : .secondary)
+            }
+            .width(46)
         }
         .tableStyle(.inset)
         .font(.system(size: 12))
+    }
+
+    private func protoLabel(_ flow: Flow) -> String {
+        if flow.isWebSocket { return "WS" }
+        return flow.httpVersion.contains("2") ? "H2" : "H1"
     }
 
     private func clientName(_ flow: Flow) -> String {

@@ -22,7 +22,8 @@ enum TLSIdentity {
             certificateChain: [.certificate(leafCert), .certificate(caCert)],
             privateKey: .privateKey(key)
         )
-        config.applicationProtocols = ["http/1.1"]
+        // Advertise HTTP/2 and HTTP/1.1; the ALPN result selects the pipeline.
+        config.applicationProtocols = ["h2", "http/1.1"]
         return try NIOSSLContext(configuration: config)
     }
 }

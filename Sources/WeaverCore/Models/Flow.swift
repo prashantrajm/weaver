@@ -27,6 +27,11 @@ public final class Flow: Identifiable, @unchecked Sendable {
     public var clientDescription: String   // best-effort client/app identity
     public var isTLS: Bool
     public var error: String?
+    public var httpVersion: String = "HTTP/1.1"
+
+    // WebSocket (populated for upgraded connections; see WebSocketInterception).
+    public var isWebSocket: Bool = false
+    public var webSocketMessages: [WebSocketMessage] = []
 
     public init(
         id: UUID = UUID(),
@@ -69,7 +74,7 @@ public final class Flow: Identifiable, @unchecked Sendable {
 
     /// Coarse classification used by the type-filter tabs.
     public var kind: FlowKind {
-        if isTLS && scheme == "https" { /* fallthrough to content classification */ }
+        if isWebSocket { return .websocket }
         guard let ct = contentType?.lowercased() else {
             return isTLS ? .https : .http
         }
@@ -81,6 +86,32 @@ public final class Flow: Identifiable, @unchecked Sendable {
         if ct.contains("html") { return .document }
         if ct.contains("image") || ct.contains("video") || ct.contains("audio") { return .media }
         return isTLS ? .https : .http
+    }
+}
+
+/// One WebSocket frame/message captured on an upgraded connection.
+public struct WebSocketMessage: Identifiable, Sendable {
+    public enum Direction: String, Sendable { case sent, received }   // relative to the client
+    public enum Kind: String, Sendable { case text, binary, ping, pong, close }
+
+    public let id = UUID()
+    public let direction: Direction
+    public let kind: Kind
+    public let payload: Data
+    public let timestamp: Date
+
+    public init(direction: Direction, kind: Kind, payload: Data, timestamp: Date = Date()) {
+        self.direction = direction
+        self.kind = kind
+        self.payload = payload
+        self.timestamp = timestamp
+    }
+
+    public var textPreview: String {
+        if kind == .text || kind == .close {
+            return String(data: payload, encoding: .utf8) ?? "\(payload.count) bytes"
+        }
+        return "\(payload.count) bytes"
     }
 }
 
@@ -96,6 +127,7 @@ public struct HTTPHeader: Hashable, Sendable, Codable {
 public enum FlowKind: String, CaseIterable, Sendable {
     case http = "HTTP"
     case https = "HTTPS"
+    case websocket = "WebSocket"
     case json = "JSON"
     case form = "Form"
     case xml = "XML"

@@ -22,18 +22,21 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
     private let httpClient: HTTPClient
     private let interceptedHost: String?
     private let interceptedPort: Int
+    private let httpVersionLabel: String
 
     // Per-request accumulation.
     private var requestHead: HTTPRequestHead?
     private var bodyBuffer: ByteBuffer?
 
     init(ca: CertificateAuthority, events: ProxyEventHandler?, httpClient: HTTPClient,
-         interceptedHost: String? = nil, interceptedPort: Int = 443) {
+         interceptedHost: String? = nil, interceptedPort: Int = 443,
+         httpVersionLabel: String = "HTTP/1.1") {
         self.ca = ca
         self.events = events
         self.httpClient = httpClient
         self.interceptedHost = interceptedHost
         self.interceptedPort = interceptedPort
+        self.httpVersionLabel = httpVersionLabel
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -51,13 +54,40 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             bodyBuffer?.writeBuffer(&chunk)
 
         case .end:
-            guard interceptedHost == nil || requestHead != nil else { return }
-            if let head = requestHead {
+            guard let head = requestHead else { return }
+            if Self.isWebSocketUpgrade(head) {
+                startWebSocketInterception(context: context, head: head)
+            } else {
                 forward(context: context, head: head, body: bodyBuffer)
-                requestHead = nil
-                bodyBuffer = nil
             }
+            requestHead = nil
+            bodyBuffer = nil
         }
+    }
+
+    private static func isWebSocketUpgrade(_ head: HTTPRequestHead) -> Bool {
+        let upgrade = head.headers[canonicalForm: "upgrade"].map { $0.lowercased() }
+        let connection = head.headers[canonicalForm: "connection"].map { $0.lowercased() }
+        return upgrade.contains("websocket") && connection.contains("upgrade")
+    }
+
+    private func startWebSocketInterception(context: ChannelHandlerContext, head: HTTPRequestHead) {
+        let scheme = interceptedHost == nil ? "ws" : "wss"
+        let (absoluteURLString, host) = Self.resolveURL(head: head, scheme: scheme,
+                                                        interceptedHost: interceptedHost)
+        let port = interceptedHost == nil
+            ? (head.headers.first(name: "host").flatMap { Self.splitAuthority($0, defaultPort: 80).1 } ?? 80)
+            : interceptedPort
+        WebSocketInterception.start(
+            channel: context.channel,
+            head: head,
+            absoluteURL: absoluteURLString,
+            host: host,
+            port: port,
+            isTLS: interceptedHost != nil,
+            httpVersionLabel: httpVersionLabel,
+            events: events
+        )
     }
 
     // MARK: - CONNECT → TLS interception
@@ -91,17 +121,15 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
                 let leaf = try ca.leaf(forHost: host)
                 let sslContext = try TLSIdentity.serverContext(for: leaf, caCertificate: ca.certificate)
                 let sslHandler = NIOSSLServerHandler(context: sslContext)
-                let mitm = ProxyConnectionHandler(
-                    ca: ca, events: events, httpClient: httpClient,
-                    interceptedHost: host, interceptedPort: port
-                )
                 try channel.pipeline.syncOperations.addHandler(sslHandler, name: "tls")
-                try channel.pipeline.syncOperations.addHandler(
-                    ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes)),
-                    name: "http-decoder"
-                )
-                try channel.pipeline.syncOperations.addHandler(HTTPResponseEncoder(), name: "http-encoder")
-                try channel.pipeline.syncOperations.addHandler(mitm, name: "proxy-handler")
+                // ALPN then selects the HTTP/1.1 or HTTP/2 pipeline.
+                ServerPipeline.configureAfterTLS(
+                    channel: channel, host: host, port: port,
+                    ca: ca, events: events, httpClient: httpClient
+                ).whenFailure { error in
+                    events?.proxyDidLog("HTTP pipeline setup failed for \(host): \(error)")
+                    channel.close(promise: nil)
+                }
             } catch {
                 events?.proxyDidLog("TLS interception failed for \(host): \(error)")
                 channel.close(promise: nil)
@@ -138,6 +166,7 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             isTLS: scheme == "https",
             clientDescription: head.headers.first(name: "user-agent") ?? ""
         )
+        flow.httpVersion = httpVersionLabel
         events?.flowDidStart(flow)
 
         var clientRequest: HTTPClientRequest

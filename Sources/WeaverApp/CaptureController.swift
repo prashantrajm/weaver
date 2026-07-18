@@ -26,18 +26,36 @@ final class CaptureController: ObservableObject {
 
     var caCertificatePath: String { caManager?.certificatePEMURL.path ?? "" }
 
-    init() {
-        do {
-            let manager = try CAManager()
+    init() {}
+
+    /// Loads (or generates) the CA off the main thread. Keychain access can
+    /// block on a system prompt, so this must not run during view/window init.
+    func bootstrap() async {
+        guard caManager == nil else { return }
+        statusMessage = "Preparing certificate authority…"
+        let result: Result<(CAManager, CAManager.TrustState), Error> = await Task.detached(priority: .userInitiated) {
+            do {
+                let manager = try CAManager()
+                return .success((manager, manager.trustState()))
+            } catch {
+                return .failure(error)
+            }
+        }.value
+        switch result {
+        case .success(let (manager, trust)):
             self.caManager = manager
-            self.trustState = manager.trustState()
-        } catch {
-            statusMessage = "CA init failed: \(error)"
+            self.trustState = trust
+            self.statusMessage = "Ready — press Start"
+        case .failure(let error):
+            self.statusMessage = "CA init failed: \(error)"
         }
     }
 
     func start() {
-        guard let caManager, server == nil else { return }
+        guard let caManager, server == nil else {
+            if caManager == nil { statusMessage = "Still preparing CA…" }
+            return
+        }
         let bridge = EventBridge(controller: self)
         self.eventBridge = bridge
         let server = ProxyServer(host: listenHost, port: listenPort,
@@ -109,6 +127,10 @@ final class CaptureController: ObservableObject {
         objectWillChange.send()
     }
 
+    fileprivate func ingestUpdate(_ flow: Flow) {
+        objectWillChange.send()
+    }
+
     fileprivate func ingestLog(_ message: String) {
         statusMessage = message
     }
@@ -124,6 +146,9 @@ private final class EventBridge: ProxyEventHandler, @unchecked Sendable {
     }
     func flowDidComplete(_ flow: Flow) {
         Task { @MainActor in controller?.ingestComplete(flow) }
+    }
+    func flowDidUpdate(_ flow: Flow) {
+        Task { @MainActor in controller?.ingestUpdate(flow) }
     }
     func proxyDidLog(_ message: String) {
         Task { @MainActor in controller?.ingestLog(message) }

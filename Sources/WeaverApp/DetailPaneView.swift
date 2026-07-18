@@ -11,17 +11,28 @@ struct DetailPaneView: View {
             VStack(spacing: 0) {
                 summaryBar(flow)
                 Divider()
-                HSplitView {
-                    MessagePane(title: "Request",
-                                headers: flow.requestHeaders,
-                                bodyData: flow.requestBody,
-                                url: flow.url,
-                                contentType: flow.requestHeaders.first { $0.name.lowercased() == "content-type" }?.value)
-                    MessagePane(title: "Response",
-                                headers: flow.responseHeaders,
-                                bodyData: flow.responseBody,
-                                url: flow.url,
-                                contentType: flow.contentType)
+                if flow.isWebSocket {
+                    HSplitView {
+                        MessagePane(title: "Handshake",
+                                    headers: flow.requestHeaders,
+                                    bodyData: nil,
+                                    url: flow.url,
+                                    contentType: nil)
+                        WebSocketMessagesView(flow: flow)
+                    }
+                } else {
+                    HSplitView {
+                        MessagePane(title: "Request",
+                                    headers: flow.requestHeaders,
+                                    bodyData: flow.requestBody,
+                                    url: flow.url,
+                                    contentType: flow.requestHeaders.first { $0.name.lowercased() == "content-type" }?.value)
+                        MessagePane(title: "Response",
+                                    headers: flow.responseHeaders,
+                                    bodyData: flow.responseBody,
+                                    url: flow.url,
+                                    contentType: flow.contentType)
+                    }
                 }
             }
         } else {
@@ -129,6 +140,52 @@ private struct KeyValueList: View {
                 }
             }
         }
+    }
+}
+
+/// Live list of captured WebSocket frames, colored by direction (M1.1 WS).
+private struct WebSocketMessagesView: View {
+    let flow: Flow
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Messages").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(flow.webSocketMessages.count)")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            Divider()
+            if flow.webSocketMessages.isEmpty {
+                EmptyPane(text: "No messages yet")
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(flow.webSocketMessages) { message in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: message.direction == .sent
+                                      ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                                    .foregroundStyle(message.direction == .sent ? .blue : .green)
+                                    .font(.system(size: 11))
+                                Text(message.kind.rawValue.uppercased())
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 48, alignment: .leading)
+                                Text(message.textPreview)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .lineLimit(6)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 3)
+                            Divider().opacity(0.4)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 260)
     }
 }
 

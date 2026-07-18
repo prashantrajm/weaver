@@ -9,6 +9,13 @@ public protocol ProxyEventHandler: AnyObject, Sendable {
     func flowDidStart(_ flow: Flow)
     func flowDidComplete(_ flow: Flow)
     func proxyDidLog(_ message: String)
+    /// Fired when an already-started flow mutates in place (e.g. a new
+    /// WebSocket frame is appended). Optional; defaults to a no-op.
+    func flowDidUpdate(_ flow: Flow)
+}
+
+public extension ProxyEventHandler {
+    func flowDidUpdate(_ flow: Flow) {}
 }
 
 public enum ProxyState: Equatable, Sendable {

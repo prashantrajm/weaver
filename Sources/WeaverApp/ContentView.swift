@@ -56,7 +56,10 @@ struct ContentView: View {
             StatusBar(searchText: $searchText, visibleCount: filteredFlows.count,
                       totalCount: controller.flows.count)
         }
-        .onAppear { controller.refreshTrustState() }
+        .task {
+            await controller.bootstrap()
+            controller.refreshTrustState()
+        }
     }
 }
 
