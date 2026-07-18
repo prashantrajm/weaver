@@ -45,20 +45,8 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
         let part = unwrapInboundIn(data)
         switch part {
         case .head(let head):
-            if interceptedHost == nil && head.method == .CONNECT {
-                let (host, port) = Self.splitAuthority(head.uri, defaultPort: 443)
-                if filter?.shouldBypass(host) == true {
-                    // Acknowledge the tunnel, then relay bytes straight through.
-                    context.write(wrapOutboundOut(.head(HTTPResponseHead(
-                        version: .http1_1,
-                        status: .custom(code: 200, reasonPhrase: "Connection Established")))), promise: nil)
-                    context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
-                    BlindTunnel.start(clientChannel: context.channel, host: host, port: port, events: events)
-                } else {
-                    startTLSInterception(context: context, authority: head.uri)
-                }
-                return
-            }
+            // CONNECT is handled upstream by ConnectSniffer; here we only ever
+            // see proxied HTTP requests (plain, or decrypted inside the tunnel).
             requestHead = head
             bodyBuffer = context.channel.allocator.buffer(capacity: 0)
 
@@ -100,59 +88,6 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             httpVersionLabel: httpVersionLabel,
             events: events
         )
-    }
-
-    // MARK: - CONNECT → TLS interception
-
-    private func startTLSInterception(context: ChannelHandlerContext, authority: String) {
-        let (host, port) = Self.splitAuthority(authority, defaultPort: 443)
-
-        // Acknowledge the tunnel so the client begins its TLS handshake with us.
-        var headers = HTTPHeaders()
-        headers.add(name: "Connection", value: "keep-alive")
-        let responseHead = HTTPResponseHead(
-            version: .http1_1,
-            status: .custom(code: 200, reasonPhrase: "Connection Established"),
-            headers: HTTPHeaders()
-        )
-        _ = headers
-        context.write(wrapOutboundOut(.head(responseHead)), promise: nil)
-        context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
-
-        let channel = context.channel
-        let ca = self.ca
-        let events = self.events
-        let httpClient = self.httpClient
-
-        // Swap the plain HTTP pipeline for: TLS server → HTTP server → MITM handler.
-        let removals = ["http-decoder", "http-encoder", "proxy-handler"].map { name in
-            channel.pipeline.removeHandler(name: name)
-        }
-        EventLoopFuture.andAllComplete(removals, on: channel.eventLoop).whenComplete { _ in
-            do {
-                let leaf = try ca.leaf(forHost: host)
-                let sslContext = try TLSIdentity.serverContext(for: leaf, caCertificate: ca.certificate)
-                let sslHandler = NIOSSLServerHandler(context: sslContext)
-                try channel.pipeline.syncOperations.addHandler(sslHandler, name: "tls")
-                // Watch the client-facing handshake so pinning failures surface
-                // as a flow instead of a silent close.
-                try channel.pipeline.syncOperations.addHandler(
-                    TLSHandshakeMonitor(host: host, port: port, events: events),
-                    name: "tls-monitor"
-                )
-                // ALPN then selects the HTTP/1.1 or HTTP/2 pipeline.
-                ServerPipeline.configureAfterTLS(
-                    channel: channel, host: host, port: port,
-                    ca: ca, events: events, httpClient: httpClient
-                ).whenFailure { error in
-                    events?.proxyDidLog("HTTP pipeline setup failed for \(host): \(error)")
-                    channel.close(promise: nil)
-                }
-            } catch {
-                events?.proxyDidLog("TLS interception failed for \(host): \(error)")
-                channel.close(promise: nil)
-            }
-        }
     }
 
     // MARK: - Forwarding

@@ -99,13 +99,15 @@ struct ProxyToolbar: View {
                 .font(.system(size: 12, weight: .medium))
         case .installedNotTrusted:
             Button(action: controller.installAndTrustCA) {
-                Label("Trust CA", systemImage: "exclamationmark.triangle.fill")
+                Label("Trust CA (Mac)", systemImage: "exclamationmark.triangle.fill")
             }
             .tint(.orange)
+            .help("Trusts the CA in the Mac System keychain — only needed to capture Mac apps. For iPhone/Android capture, install the CA on the device instead.")
         case .notInstalled:
             Button(action: controller.installAndTrustCA) {
-                Label("Install & Trust CA", systemImage: "lock.shield")
+                Label("Install CA (Mac)", systemImage: "lock.shield")
             }
+            .help("Installs the CA in the Mac System keychain — only needed to capture Mac apps. For device capture, install the CA on the device instead.")
         }
     }
 }

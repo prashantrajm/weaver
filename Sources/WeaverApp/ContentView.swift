@@ -17,7 +17,7 @@ struct ContentView: View {
             if let typeFilter, flow.kind != typeFilter { return false }
             switch sidebarSelection {
             case .allTraffic: break
-            case .app(let name): if flow.clientDescription != name { return false }
+            case .app(let name): if flow.appDisplayName != name { return false }
             case .domain(let host): if flow.host != host { return false }
             }
             if !searchText.isEmpty {
@@ -67,4 +67,15 @@ enum SidebarSelection: Hashable {
     case allTraffic
     case app(String)
     case domain(String)
+}
+
+extension Flow {
+    /// Display name used to group traffic by client app. Must be identical in
+    /// the sidebar grouping and the list filter, or selecting a group shows
+    /// nothing (best-effort: first token of the User-Agent, else "Unknown").
+    var appDisplayName: String {
+        clientDescription.isEmpty
+            ? "Unknown"
+            : (clientDescription.split(separator: "/").first.map(String.init) ?? clientDescription)
+    }
 }

@@ -13,7 +13,8 @@ enum BlindTunnel {
         clientChannel: Channel,
         host: String,
         port: Int,
-        events: ProxyEventHandler?
+        events: ProxyEventHandler?,
+        initialClientBytes: ByteBuffer? = nil
     ) {
         let flow = Flow(
             method: "CONNECT",
@@ -32,39 +33,34 @@ enum BlindTunnel {
         let toClient = ChannelBox()
         toClient.channel = clientChannel
 
-        let clientGlue = GlueHandler(peer: toOrigin)
+        // Seed the client-side relay with any bytes the client already sent
+        // (the ClientHello pipelined with CONNECT), buffered until the origin
+        // side connects. The caller has already removed the CONNECT sniffer.
+        let clientGlue = GlueHandler(peer: toOrigin, initial: initialClientBytes)
         let originGlue = GlueHandler(peer: toClient)
 
-        // Swap the HTTP proxy handlers for the raw client-side relay *first*, so
-        // the client's TLS ClientHello isn't dropped while we dial the origin
-        // (the glue buffers it until the origin side is connected).
-        let removals = ["proxy-handler", "http-decoder", "http-encoder"].map {
-            clientChannel.pipeline.removeHandler(name: $0)
+        do {
+            try clientChannel.pipeline.syncOperations.addHandler(clientGlue, name: "glue")
+        } catch {
+            clientChannel.close(promise: nil)
+            return
         }
-        EventLoopFuture.andAllComplete(removals, on: clientChannel.eventLoop).whenComplete { _ in
-            do {
-                try clientChannel.pipeline.syncOperations.addHandler(clientGlue, name: "glue")
-            } catch {
-                clientChannel.close(promise: nil)
-                return
-            }
 
-            ClientBootstrap(group: clientChannel.eventLoop)
-                .channelInitializer { origin in origin.pipeline.addHandler(originGlue) }
-                .connect(host: host, port: port)
-                .whenComplete { result in
-                    switch result {
-                    case .success(let originChannel):
-                        toOrigin.channel = originChannel
-                        clientGlue.flushPending()      // release any buffered ClientHello
-                    case .failure(let error):
-                        flow.error = "Bypass tunnel to \(host):\(port) failed: \(error)"
-                        flow.completedAt = Date()
-                        events?.flowDidComplete(flow)
-                        clientChannel.close(promise: nil)
-                    }
+        ClientBootstrap(group: clientChannel.eventLoop)
+            .channelInitializer { origin in origin.pipeline.addHandler(originGlue) }
+            .connect(host: host, port: port)
+            .whenComplete { result in
+                switch result {
+                case .success(let originChannel):
+                    toOrigin.channel = originChannel
+                    clientGlue.flushPending()      // release the buffered ClientHello
+                case .failure(let error):
+                    flow.error = "Bypass tunnel to \(host):\(port) failed: \(error)"
+                    flow.completedAt = Date()
+                    events?.flowDidComplete(flow)
+                    clientChannel.close(promise: nil)
                 }
-        }
+            }
 
         clientChannel.closeFuture.whenComplete { _ in
             if flow.completedAt == nil {
@@ -81,9 +77,12 @@ final class GlueHandler: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
 
     private let peer: ChannelBox
-    private var pending: [ByteBuffer] = []
+    private var pending: [ByteBuffer]
 
-    init(peer: ChannelBox) { self.peer = peer }
+    init(peer: ChannelBox, initial: ByteBuffer? = nil) {
+        self.peer = peer
+        self.pending = initial.map { [$0] } ?? []
+    }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let buffer = unwrapInboundIn(data)

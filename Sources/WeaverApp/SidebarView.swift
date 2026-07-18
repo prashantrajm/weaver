@@ -8,7 +8,7 @@ struct SidebarView: View {
     @Binding var selection: SidebarSelection
 
     private var apps: [(name: String, count: Int)] {
-        group(by: { $0.clientDescription.isEmpty ? "Unknown" : shortAppName($0.clientDescription) })
+        group(by: { $0.appDisplayName })
     }
     private var domains: [(name: String, count: Int)] {
         group(by: { $0.host })
@@ -57,10 +57,5 @@ struct SidebarView: View {
         for flow in controller.flows { counts[key(flow), default: 0] += 1 }
         return counts.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
             .map { ($0.key, $0.value) }
-    }
-
-    private func shortAppName(_ userAgent: String) -> String {
-        // Best-effort: first token of the User-Agent (e.g. "curl/8.4" → "curl").
-        userAgent.split(separator: "/").first.map(String.init) ?? userAgent
     }
 }

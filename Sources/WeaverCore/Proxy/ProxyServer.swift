@@ -65,15 +65,12 @@ public final class ProxyServer: @unchecked Sendable {
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { [ca, events, httpClient, filter] channel in
-                let handler = ProxyConnectionHandler(ca: ca, events: events, httpClient: httpClient, filter: filter)
+                // A byte-level sniffer parses the initial request head precisely,
+                // so a pipelined TLS ClientHello after CONNECT is handed to the
+                // TLS handler untouched (see ConnectSniffer).
+                let sniffer = ConnectSniffer(ca: ca, events: events, httpClient: httpClient, filter: filter)
                 do {
-                    let sync = channel.pipeline.syncOperations
-                    try sync.addHandler(
-                        ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes)),
-                        name: "http-decoder"
-                    )
-                    try sync.addHandler(HTTPResponseEncoder(), name: "http-encoder")
-                    try sync.addHandler(handler, name: "proxy-handler")
+                    try channel.pipeline.syncOperations.addHandler(sniffer, name: ConnectSniffer.name)
                     return channel.eventLoop.makeSucceededVoidFuture()
                 } catch {
                     return channel.eventLoop.makeFailedFuture(error)
