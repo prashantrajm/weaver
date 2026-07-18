@@ -20,8 +20,14 @@ final class CaptureController: ObservableObject {
     @Published private(set) var bytesIn = 0
     @Published private(set) var bytesOut = 0
 
-    let listenHost = "127.0.0.1"
+    // Bind all interfaces so a device on the same Wi-Fi can reach the proxy;
+    // `lanAddress` is what the user enters as the HTTP proxy on that device.
+    let listenHost = "0.0.0.0"
     let listenPort = 9090
+    @Published private(set) var lanAddress: String?
+
+    /// The address to point a device at: the LAN IP if known, else loopback.
+    var deviceProxyHost: String { lanAddress ?? "127.0.0.1" }
 
     private var caManager: CAManager?
     private var server: ProxyServer?
@@ -35,6 +41,7 @@ final class CaptureController: ObservableObject {
     /// block on a system prompt, so this must not run during view/window init.
     func bootstrap() async {
         guard caManager == nil else { return }
+        lanAddress = LocalAddress.primaryIPv4()
         statusMessage = "Preparing certificate authority…"
         let result: Result<(CAManager, CAManager.TrustState), Error> = await Task.detached(priority: .userInitiated) {
             do {
@@ -61,13 +68,14 @@ final class CaptureController: ObservableObject {
         }
         let bridge = EventBridge(controller: self)
         self.eventBridge = bridge
+        self.lanAddress = LocalAddress.primaryIPv4()
         let server = ProxyServer(host: listenHost, port: listenPort,
                                  ca: caManager.authority, events: bridge)
         do {
             try server.start()
             self.server = server
             self.isRunning = true
-            self.statusMessage = "Listening on \(listenHost):\(listenPort)"
+            self.statusMessage = "Listening on \(deviceProxyHost):\(listenPort)"
         } catch {
             self.statusMessage = "Start failed: \(error)"
         }

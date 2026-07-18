@@ -53,14 +53,29 @@ struct ProxyToolbar: View {
                 .fill(controller.isRunning ? Color.green : Color.secondary)
                 .frame(width: 8, height: 8)
             Text(controller.isRunning
-                 ? "Listening on \(controller.listenHost):\(controller.listenPort)"
+                 ? "Proxy \(controller.deviceProxyHost):\(controller.listenPort)"
                  : controller.statusMessage)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
+            if controller.isRunning {
+                Button {
+                    copyProxyAddress()
+                } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .help("Copy the proxy address to set on your device's Wi-Fi")
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .background(Capsule().fill(Color.secondary.opacity(0.12)))
+    }
+
+    private func copyProxyAddress() {
+        let text = "\(controller.deviceProxyHost):\(controller.listenPort)"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     @ViewBuilder
