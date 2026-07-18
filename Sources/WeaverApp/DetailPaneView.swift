@@ -62,7 +62,10 @@ struct DetailPaneView: View {
                 Text("\(code)").font(.system(size: 11, weight: .bold, design: .monospaced))
             }
             Text(flow.url.absoluteString)
-                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
+                .textSelection(.enabled)
+            CopyButton(text: { flow.url.absoluteString }, help: "Copy URL")
             Spacer()
             if let error = flow.error {
                 Text(error).font(.caption).foregroundStyle(.red).lineLimit(1)
@@ -79,7 +82,9 @@ private struct MessagePane: View {
     let url: URL
     let contentType: String?
 
-    enum Tab: String, CaseIterable { case header = "Header", query = "Query", body = "Body", raw = "Raw" }
+    enum Tab: String, CaseIterable {
+        case header = "Header", query = "Query", body = "Body", raw = "Raw", preview = "Preview"
+    }
     @State private var tab: Tab = .header
 
     private var queryItems: [(String, String)] {
@@ -87,17 +92,29 @@ private struct MessagePane: View {
             .map { ($0.name, $0.value ?? "") } ?? []
     }
 
+    // Preview tab appears only when the body is a previewable image.
+    private var tabs: [Tab] {
+        var t: [Tab] = [.header, .query, .body, .raw]
+        if BodyRenderer.isImage(contentType), let d = bodyData, !d.isEmpty { t.append(.preview) }
+        return t
+    }
+
+    private var activeTab: Tab { tabs.contains(tab) ? tab : .header }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                if activeTab != .preview {
+                    CopyButton(text: copyableText, help: "Copy \(activeTab.rawValue.lowercased())")
+                }
                 Spacer()
                 Picker("", selection: $tab) {
-                    ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    ForEach(tabs, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 260)
+                .frame(maxWidth: 340)
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
             Divider()
@@ -108,7 +125,7 @@ private struct MessagePane: View {
 
     @ViewBuilder
     private var content: some View {
-        switch tab {
+        switch activeTab {
         case .header:
             KeyValueList(pairs: headers.map { ($0.name, $0.value) })
         case .query:
@@ -117,6 +134,26 @@ private struct MessagePane: View {
             BodyView(data: bodyData, contentType: contentType, raw: false)
         case .raw:
             BodyView(data: bodyData, contentType: contentType, raw: true)
+        case .preview:
+            ImagePreviewView(data: bodyData)
+        }
+    }
+
+    /// Beautified text of the current tab, for the copy button.
+    private func copyableText() -> String {
+        switch activeTab {
+        case .header:
+            return headers.map { "\($0.name): \($0.value)" }.joined(separator: "\n")
+        case .query:
+            return queryItems.map { "\($0.0): \($0.1)" }.joined(separator: "\n")
+        case .body:
+            guard let d = bodyData, !d.isEmpty else { return "" }
+            return BodyRenderer.text(d, contentType: contentType, raw: false)
+        case .raw:
+            guard let d = bodyData, !d.isEmpty else { return "" }
+            return BodyRenderer.text(d, contentType: contentType, raw: true)
+        case .preview:
+            return ""
         }
     }
 }

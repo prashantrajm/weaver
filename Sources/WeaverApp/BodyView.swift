@@ -1,8 +1,9 @@
 import SwiftUI
 import WeaverCore
 
-/// Content-aware body viewer: pretty-prints JSON, falls back to UTF-8 text, and
-/// shows a hex dump for binary payloads (M1.3).
+/// Content-aware body viewer: pretty-prints JSON/XML, falls back to UTF-8 text,
+/// and shows a hex dump for binary payloads (M1.3). Rendering is shared with the
+/// copy button via `BodyRenderer`.
 struct BodyView: View {
     let data: Data?
     let contentType: String?
@@ -12,7 +13,7 @@ struct BodyView: View {
         guard let data, !data.isEmpty else {
             return AnyView(EmptyPane(text: "No body"))
         }
-        let rendered = render(data)
+        let rendered = BodyRenderer.text(data, contentType: contentType, raw: raw)
         return AnyView(
             ScrollView([.horizontal, .vertical]) {
                 Text(rendered)
@@ -23,43 +24,35 @@ struct BodyView: View {
             }
         )
     }
+}
 
-    private func render(_ data: Data) -> String {
-        let ct = (contentType ?? "").lowercased()
-        if !raw && ct.contains("json"), let pretty = prettyJSON(data) {
-            return pretty
-        }
-        if ct.contains("json") || ct.contains("xml") || ct.contains("text")
-            || ct.contains("javascript") || ct.contains("html") || ct.contains("form")
-            || ct.isEmpty {
-            if let text = String(data: data, encoding: .utf8) {
-                return text
+/// Renders an image body scaled to fit, with its pixel size and byte count.
+struct ImagePreviewView: View {
+    let data: Data?
+
+    var body: some View {
+        if let data, let image = BodyRenderer.image(from: data) {
+            VStack(spacing: 6) {
+                ScrollView([.horizontal, .vertical]) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(10)
+                }
+                Text("\(Int(image.size.width))×\(Int(image.size.height)) · \(byteString(data.count))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 6)
             }
+        } else {
+            EmptyPane(text: "Not a previewable image")
         }
-        // Binary → hex dump.
-        return hexDump(data)
     }
 
-    private func prettyJSON(_ data: Data) -> String? {
-        guard let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
-              let pretty = try? JSONSerialization.data(withJSONObject: object,
-                                                       options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        else { return nil }
-        return String(data: pretty, encoding: .utf8)
-    }
-
-    private func hexDump(_ data: Data) -> String {
-        var lines: [String] = []
-        let bytes = [UInt8](data.prefix(4096))
-        var offset = 0
-        while offset < bytes.count {
-            let slice = bytes[offset..<min(offset + 16, bytes.count)]
-            let hex = slice.map { String(format: "%02x", $0) }.joined(separator: " ")
-            let ascii = slice.map { (32...126).contains($0) ? String(UnicodeScalar($0)) : "." }.joined()
-            lines.append(String(format: "%08x  %-47s  %@", offset, (hex as NSString).utf8String!, ascii))
-            offset += 16
-        }
-        if data.count > 4096 { lines.append("… \(data.count - 4096) more bytes") }
-        return lines.joined(separator: "\n")
+    private func byteString(_ bytes: Int) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        if bytes < 1024 * 1024 { return String(format: "%.1f KB", Double(bytes) / 1024) }
+        return String(format: "%.1f MB", Double(bytes) / (1024 * 1024))
     }
 }

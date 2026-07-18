@@ -26,6 +26,12 @@ struct SidebarView: View {
                 ForEach(apps, id: \.name) { item in
                     rowLabel(item.name, count: item.count, icon: "app.dashed")
                         .tag(SidebarSelection.app(item.name))
+                        .contextMenu {
+                            Button("Clear \(item.name) requests (\(item.count))", role: .destructive) {
+                                controller.clearApp(item.name)
+                                if selection == .app(item.name) { selection = .allTraffic }
+                            }
+                        }
                 }
             }
 
@@ -33,6 +39,13 @@ struct SidebarView: View {
                 ForEach(domains, id: \.name) { item in
                     rowLabel(item.name, count: item.count, icon: "network")
                         .tag(SidebarSelection.domain(item.name))
+                        .contextMenu {
+                            Button("Clear \(item.name) requests (\(item.count))", role: .destructive) {
+                                controller.clearDomain(item.name)
+                                if selection == .domain(item.name) { selection = .allTraffic }
+                            }
+                            Button("Bypass \(item.name)") { controller.addBypass(item.name) }
+                        }
                 }
             }
         }

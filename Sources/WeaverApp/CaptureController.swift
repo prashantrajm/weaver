@@ -101,6 +101,17 @@ final class CaptureController: ObservableObject {
         bytesOut = 0
     }
 
+    /// Clear only the requests from one app group (keeps everything else) — so a
+    /// chatty app doesn't bury the endpoint you're hunting for.
+    func clearApp(_ name: String) {
+        flows.removeAll { $0.appDisplayName == name }
+    }
+
+    /// Clear only the requests for one domain.
+    func clearDomain(_ host: String) {
+        flows.removeAll { $0.host == host }
+    }
+
     // MARK: - Bypass list
 
     func addBypass(_ pattern: String) {
