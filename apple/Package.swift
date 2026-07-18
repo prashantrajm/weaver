@@ -1,6 +1,12 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+// Monorepo layout:
+//   core/WeaverCore            shared Swift core (macOS today; iOS as it's extracted)
+//   apps/macos/WeaverApp macOS desktop-proxy app (SwiftPM executable)
+//   apps/ios                  standalone iOS app (Xcode project)
+//   apps/android              standalone Android app (future — Kotlin/Compose)
+//   tests/WeaverCoreTests      core unit + MITM integration tests
 let package = Package(
     name: "Weaver",
     platforms: [
@@ -31,15 +37,18 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "_CryptoExtras", package: "swift-crypto"),
                 .product(name: "AsyncHTTPClient", package: "async-http-client"),
-            ]
+            ],
+            path: "core/WeaverCore"
         ),
         .executableTarget(
             name: "WeaverApp",
-            dependencies: ["WeaverCore"]
+            dependencies: ["WeaverCore"],
+            path: "apps/macos/WeaverApp"
         ),
         .testTarget(
             name: "WeaverCoreTests",
-            dependencies: ["WeaverCore"]
+            dependencies: ["WeaverCore"],
+            path: "tests/WeaverCoreTests"
         ),
     ]
 )

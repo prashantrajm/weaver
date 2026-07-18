@@ -19,7 +19,7 @@ RES="$APP/Contents/Resources"
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RES"
 cp "$BIN_PATH" "$MACOS/Weaver"
-cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/apps/macos/Resources/Info.plist" "$APP/Contents/Info.plist"
 
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
