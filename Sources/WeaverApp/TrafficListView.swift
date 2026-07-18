@@ -107,11 +107,19 @@ struct TrafficListView: View {
             .width(34)
 
             TableColumn("Proto") { flow in
-                Text(protoLabel(flow))
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(flow.isWebSocket ? .purple : .secondary)
+                HStack(spacing: 3) {
+                    Text(protoLabel(flow))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(flow.isWebSocket ? .purple : .secondary)
+                    if flow.serverAdvertisedHTTP3 {
+                        Text("h3")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.orange)
+                            .help("Server offered HTTP/3; kept on TCP so it stayed capturable")
+                    }
+                }
             }
-            .width(46)
+            .width(60)
         }
         .tableStyle(.inset)
         .font(.system(size: 12))

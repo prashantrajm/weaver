@@ -12,6 +12,9 @@ final class CaptureController: ObservableObject {
     @Published private(set) var statusMessage = "Not running"
     @Published private(set) var trustState: CAManager.TrustState = .notInstalled
     @Published var isRecording = true
+    @Published var blockHTTP3 = HTTP3Policy.blockHTTP3.value {
+        didSet { HTTP3Policy.blockHTTP3.value = blockHTTP3 }
+    }
 
     // Throughput (bytes since last sample).
     @Published private(set) var bytesIn = 0

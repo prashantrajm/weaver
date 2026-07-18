@@ -196,12 +196,18 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
             switch result {
             case .success(let captured):
                 flow.statusCode = Int(captured.status.code)
+                // Keep the original headers for the inspector (transparency),
+                // even though we may strip h3 Alt-Svc from what the client gets.
                 flow.responseHeaders = captured.headers.map { HTTPHeader(name: $0.name, value: $0.value) }
+                flow.serverAdvertisedHTTP3 = HTTP3Policy.advertisesHTTP3(captured.headers)
                 flow.responseBody = captured.body.isEmpty ? nil : captured.body
                 flow.completedAt = Date()
                 events?.flowDidComplete(flow)
+                let outHeaders = HTTP3Policy.blockHTTP3.value
+                    ? HTTP3Policy.stripHTTP3AltSvc(captured.headers)
+                    : captured.headers
                 Self.writeResponse(channel: channel, status: captured.status,
-                                   headers: captured.headers, body: captured.body)
+                                   headers: outHeaders, body: captured.body)
             case .failure(let error):
                 self.finishWithError(context: nil, channel: channel, flow: flow, error: error)
             }

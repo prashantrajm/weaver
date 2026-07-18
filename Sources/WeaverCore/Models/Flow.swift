@@ -28,6 +28,9 @@ public final class Flow: Identifiable, @unchecked Sendable {
     public var isTLS: Bool
     public var error: String?
     public var httpVersion: String = "HTTP/1.1"
+    /// The server advertised an HTTP/3 endpoint (via Alt-Svc); we kept the flow
+    /// on TCP so it stayed capturable. See HTTP3Policy.
+    public var serverAdvertisedHTTP3: Bool = false
 
     // WebSocket (populated for upgraded connections; see WebSocketInterception).
     public var isWebSocket: Bool = false

@@ -33,6 +33,8 @@ struct ProxyToolbar: View {
             trustControl
 
             Menu {
+                Toggle("Block HTTP/3 (force TCP for capture)", isOn: $controller.blockHTTP3)
+                Divider()
                 Button("Reveal CA Certificate in Finder", action: controller.revealCACertificate)
                 Button("Re-check Trust State", action: controller.refreshTrustState)
             } label: {
