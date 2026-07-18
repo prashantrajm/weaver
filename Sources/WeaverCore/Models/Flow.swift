@@ -31,6 +31,10 @@ public final class Flow: Identifiable, @unchecked Sendable {
     /// The server advertised an HTTP/3 endpoint (via Alt-Svc); we kept the flow
     /// on TCP so it stayed capturable. See HTTP3Policy.
     public var serverAdvertisedHTTP3: Bool = false
+    /// The client rejected our leaf during the TLS handshake (no plaintext was
+    /// ever seen). Usually certificate pinning, or the CA isn't trusted on the
+    /// device. See TLSHandshakeMonitor.
+    public var tlsInterceptionFailed: Bool = false
 
     // WebSocket (populated for upgraded connections; see WebSocketInterception).
     public var isWebSocket: Bool = false

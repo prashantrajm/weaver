@@ -122,6 +122,12 @@ final class ProxyConnectionHandler: ChannelInboundHandler, RemovableChannelHandl
                 let sslContext = try TLSIdentity.serverContext(for: leaf, caCertificate: ca.certificate)
                 let sslHandler = NIOSSLServerHandler(context: sslContext)
                 try channel.pipeline.syncOperations.addHandler(sslHandler, name: "tls")
+                // Watch the client-facing handshake so pinning failures surface
+                // as a flow instead of a silent close.
+                try channel.pipeline.syncOperations.addHandler(
+                    TLSHandshakeMonitor(host: host, port: port, events: events),
+                    name: "tls-monitor"
+                )
                 // ALPN then selects the HTTP/1.1 or HTTP/2 pipeline.
                 ServerPipeline.configureAfterTLS(
                     channel: channel, host: host, port: port,

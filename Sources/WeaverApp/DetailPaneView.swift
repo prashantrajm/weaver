@@ -11,7 +11,9 @@ struct DetailPaneView: View {
             VStack(spacing: 0) {
                 summaryBar(flow)
                 Divider()
-                if flow.isWebSocket {
+                if flow.tlsInterceptionFailed {
+                    PinningExplanationView(flow: flow)
+                } else if flow.isWebSocket {
                     HSplitView {
                         MessagePane(title: "Handshake",
                                     headers: flow.requestHeaders,
@@ -186,6 +188,45 @@ private struct WebSocketMessagesView: View {
             }
         }
         .frame(minWidth: 260)
+    }
+}
+
+/// Shown when the client rejected our certificate — explains why there's no
+/// decrypted content and what the user can do.
+private struct PinningExplanationView: View {
+    let flow: Flow
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.trianglebadge.exclamationmark.fill")
+                    .font(.system(size: 20)).foregroundStyle(.orange)
+                Text("Couldn't decrypt \(flow.host)")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+
+            Text(flow.error ?? "The TLS handshake with the client failed.")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Most likely one of:").font(.system(size: 12, weight: .medium))
+                bullet("The app pins its certificate and rejects any CA it doesn't ship with. This is expected for banking and hardened apps and can't be bypassed here.")
+                bullet("Our CA isn't installed and trusted on the device yet. Install the CA certificate and enable full trust, then retry.")
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func bullet(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text("•").font(.system(size: 12, weight: .bold)).foregroundStyle(.secondary)
+            Text(text).font(.system(size: 12)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

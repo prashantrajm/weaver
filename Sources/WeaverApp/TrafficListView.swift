@@ -73,7 +73,12 @@ struct TrafficListView: View {
             .width(min: 80, ideal: 110)
 
             TableColumn("Status") { flow in
-                if let code = flow.statusCode {
+                if flow.tlsInterceptionFailed {
+                    Text("PINNED")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.orange)
+                        .help("Client rejected our certificate — likely pinning or CA not trusted on the device")
+                } else if let code = flow.statusCode {
                     Text("\(code)")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(statusCodeColor(code))
@@ -126,6 +131,7 @@ struct TrafficListView: View {
     }
 
     private func protoLabel(_ flow: Flow) -> String {
+        if flow.tlsInterceptionFailed { return "—" }
         if flow.isWebSocket { return "WS" }
         return flow.httpVersion.contains("2") ? "H2" : "H1"
     }
