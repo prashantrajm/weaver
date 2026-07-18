@@ -1,0 +1,42 @@
+// swift-tools-version: 6.0
+import PackageDescription
+
+let package = Package(
+    name: "Weaver",
+    platforms: [
+        .macOS(.v14)
+    ],
+    products: [
+        .library(name: "WeaverCore", targets: ["WeaverCore"]),
+        .executable(name: "Weaver", targets: ["WeaverApp"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.27.0"),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.5.0"),
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.8.0"),
+        .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
+    ],
+    targets: [
+        .target(
+            name: "WeaverCore",
+            dependencies: [
+                .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "X509", package: "swift-certificates"),
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "_CryptoExtras", package: "swift-crypto"),
+                .product(name: "AsyncHTTPClient", package: "async-http-client"),
+            ]
+        ),
+        .executableTarget(
+            name: "WeaverApp",
+            dependencies: ["WeaverCore"]
+        ),
+        .testTarget(
+            name: "WeaverCoreTests",
+            dependencies: ["WeaverCore"]
+        ),
+    ]
+)

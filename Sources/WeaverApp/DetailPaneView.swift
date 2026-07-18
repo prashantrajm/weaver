@@ -1,0 +1,141 @@
+import SwiftUI
+import WeaverCore
+
+/// Split Request | Response detail pane with Header/Query/Body/Raw tabs and
+/// content-aware pretty-printing (M1.3).
+struct DetailPaneView: View {
+    let flow: Flow?
+
+    var body: some View {
+        if let flow {
+            VStack(spacing: 0) {
+                summaryBar(flow)
+                Divider()
+                HSplitView {
+                    MessagePane(title: "Request",
+                                headers: flow.requestHeaders,
+                                bodyData: flow.requestBody,
+                                url: flow.url,
+                                contentType: flow.requestHeaders.first { $0.name.lowercased() == "content-type" }?.value)
+                    MessagePane(title: "Response",
+                                headers: flow.responseHeaders,
+                                bodyData: flow.responseBody,
+                                url: flow.url,
+                                contentType: flow.contentType)
+                }
+            }
+        } else {
+            VStack {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 28)).foregroundStyle(.tertiary)
+                Text("Select a request to inspect")
+                    .foregroundStyle(.secondary).padding(.top, 6)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func summaryBar(_ flow: Flow) -> some View {
+        HStack(spacing: 8) {
+            Text(flow.method)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(0.2)))
+            if let code = flow.statusCode {
+                Text("\(code)").font(.system(size: 11, weight: .bold, design: .monospaced))
+            }
+            Text(flow.url.absoluteString)
+                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            Spacer()
+            if let error = flow.error {
+                Text(error).font(.caption).foregroundStyle(.red).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+    }
+}
+
+private struct MessagePane: View {
+    let title: String
+    let headers: [HTTPHeader]
+    let bodyData: Data?
+    let url: URL
+    let contentType: String?
+
+    enum Tab: String, CaseIterable { case header = "Header", query = "Query", body = "Body", raw = "Raw" }
+    @State private var tab: Tab = .header
+
+    private var queryItems: [(String, String)] {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+            .map { ($0.name, $0.value ?? "") } ?? []
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Picker("", selection: $tab) {
+                    ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 260)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            Divider()
+            content
+        }
+        .frame(minWidth: 260)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch tab {
+        case .header:
+            KeyValueList(pairs: headers.map { ($0.name, $0.value) })
+        case .query:
+            KeyValueList(pairs: queryItems)
+        case .body:
+            BodyView(data: bodyData, contentType: contentType, raw: false)
+        case .raw:
+            BodyView(data: bodyData, contentType: contentType, raw: true)
+        }
+    }
+}
+
+private struct KeyValueList: View {
+    let pairs: [(String, String)]
+    var body: some View {
+        if pairs.isEmpty {
+            EmptyPane(text: "None")
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(pair.0)
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 160, alignment: .leading)
+                            Text(pair.1)
+                                .font(.system(size: 11, design: .monospaced))
+                                .textSelection(.enabled)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 3)
+                        Divider().opacity(0.4)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct EmptyPane: View {
+    let text: String
+    var body: some View {
+        Text(text).foregroundStyle(.tertiary).font(.caption)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
