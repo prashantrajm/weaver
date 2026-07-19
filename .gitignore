@@ -1,5 +1,6 @@
 .build/
 build/
+build-device/
 .swiftpm/
 *.xcodeproj
 DerivedData/

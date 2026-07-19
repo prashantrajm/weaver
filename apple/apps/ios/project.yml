@@ -1,0 +1,48 @@
+name: Weaver
+options:
+  bundleIdPrefix: com.weaver
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+packages:
+  Weaver:
+    # The monorepo Swift package (apple/) — provides WeaverCore, InspectorKit,
+    # and the WeaverIOS UI library the app renders.
+    path: ../..
+
+targets:
+  Weaver:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: Weaver
+        product: WeaverIOS
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Weaver
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.weaver.ios
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "6.0"
+        # Device builds: automatic signing with the team on this machine. The
+        # simulator ignores signing. Override DEVELOPMENT_TEAM per-machine.
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
