@@ -153,6 +153,25 @@ public final class CertificateAuthority: @unchecked Sendable {
         try certificate.serializeAsPEM().pemString
     }
 
+    /// DER (raw ASN.1) encoding of the CA certificate. Used on iOS to build a
+    /// `SecCertificate` for trust evaluation and to embed in a `.mobileconfig`
+    /// profile, keeping all X509/ASN.1 usage inside WeaverCore.
+    public func certificateDER() throws -> Data {
+        try Self.der(of: certificate)
+    }
+
+    /// DER encoding of a freshly minted (or cached) leaf for `host`. Used on
+    /// iOS to probe whether the OS trusts the CA for TLS server auth.
+    public func leafDER(forHost host: String) throws -> Data {
+        try Self.der(of: leaf(forHost: host).certificate)
+    }
+
+    private static func der(of certificate: Certificate) throws -> Data {
+        var serializer = DER.Serializer()
+        try serializer.serialize(certificate)
+        return Data(serializer.serializedBytes)
+    }
+
     /// PEM of the CA private key. Kept only for on-device persistence; never export.
     public func privateKeyPEM() throws -> String {
         signingKey.pemRepresentation
