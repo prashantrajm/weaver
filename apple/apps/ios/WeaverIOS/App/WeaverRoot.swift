@@ -16,6 +16,7 @@ public struct WeaverRootView: View {
     @StateObject private var store = IOSCaptureStore()
     @StateObject private var inspector = InspectorViewModel()
     @StateObject private var tunnel = TunnelController()
+    @StateObject private var captures = TunnelCaptureReader()
 
     public init() {}
 
@@ -35,6 +36,7 @@ public struct WeaverRootView: View {
         .environmentObject(store)
         .environmentObject(inspector)
         .environmentObject(tunnel)
+        .environmentObject(captures)
         .task {
             await store.bootstrap()
             await tunnel.refresh()

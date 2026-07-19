@@ -1,33 +1,30 @@
 import NetworkExtension
 import os
 
-/// The on-device packet tunnel (iOS-P1 real capture). This is the extension
-/// process that keeps running in the background while capturing.
+/// The on-device packet tunnel — the extension process that captures traffic in
+/// the background. It claims the IPv4 default route, hands every packet to a
+/// userspace TCP/IP stack (`TunnelStack`) that terminates connections locally
+/// and relays them to the real destination, capturing each connection to the
+/// shared App Group store the app reads.
 ///
-/// Milestone 0 (this file): establish the tunnel, prove the Network Extension
-/// entitlement provisions and runs on-device, and start the packet read loop.
-/// It claims only a documentation subnet (RFC 5737 192.0.2.0/24) so turning the
-/// VPN on does NOT disrupt real connectivity while we validate the plumbing.
-///
-/// Next milestones layer the userspace TCP/IP stack on top of the read loop:
-/// parse IPv4/TCP, reassemble streams, terminate TLS with a leaf minted by the
-/// shared CA, forward to the origin, and write responses back to `packetFlow`.
+/// IPv6 is deliberately left unrouted so v6 traffic flows natively and keeps
+/// working while iteration 1 covers IPv4. Decryption (MITM with the shared CA)
+/// replaces the plain relay in the next increment; today this captures every
+/// connection + its host while preserving connectivity.
 final class PacketTunnelProvider: NEPacketTunnelProvider {
     private let log = Logger(subsystem: "com.weaver.ios.tunnel", category: "tunnel")
-    private var packetCount = 0
+    private var stack: TunnelStack?
 
     override func startTunnel(options: [String: NSObject]?,
                               completionHandler: @escaping (Error?) -> Void) {
         log.log("startTunnel")
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
-
-        let ipv4 = NEIPv4Settings(addresses: ["192.0.2.2"], subnetMasks: ["255.255.255.0"])
-        // M0: route only the documentation range so real traffic is untouched.
-        // The full stack switches this to NEIPv4Route.default() to capture all.
-        ipv4.includedRoutes = [NEIPv4Route(destinationAddress: "192.0.2.0",
-                                           subnetMask: "255.255.255.0")]
+        let ipv4 = NEIPv4Settings(addresses: ["10.64.0.2"], subnetMasks: ["255.255.255.0"])
+        ipv4.includedRoutes = [NEIPv4Route.default()]   // capture all IPv4
         settings.ipv4Settings = ipv4
         settings.mtu = 1500
+        // Route DNS through the tunnel too, so name lookups are relayed.
+        settings.dnsSettings = NEDNSSettings(servers: ["8.8.8.8", "1.1.1.1"])
 
         setTunnelNetworkSettings(settings) { [weak self] error in
             guard let self else { completionHandler(nil); return }
@@ -36,7 +33,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(error)
                 return
             }
-            self.log.log("tunnel up — reading packets")
+            let store = SharedCaptureStore()
+            self.stack = TunnelStack(
+                writePacket: { [weak self] packet in
+                    self?.packetFlow.writePackets([packet], withProtocols: [AF_INET as NSNumber])
+                },
+                store: store)
+            self.log.log("tunnel up — capturing IPv4")
             self.readPackets()
             completionHandler(nil)
         }
@@ -45,11 +48,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private func readPackets() {
         packetFlow.readPackets { [weak self] packets, _ in
             guard let self else { return }
-            if !packets.isEmpty {
-                self.packetCount += packets.count
-                self.log.log("read \(packets.count) packets (total \(self.packetCount))")
-            }
-            // M0: drop captured packets. TCP/IP reassembly + MITM comes next.
+            for packet in packets { self.stack?.input(packet) }
             self.readPackets()
         }
     }
@@ -57,6 +56,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     override func stopTunnel(with reason: NEProviderStopReason,
                              completionHandler: @escaping () -> Void) {
         log.log("stopTunnel: \(String(describing: reason))")
+        stack?.shutdown()
+        stack = nil
         completionHandler()
     }
 }

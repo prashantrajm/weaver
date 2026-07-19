@@ -11,6 +11,7 @@ import InspectorKit
 struct TrafficScreen: View {
     @EnvironmentObject var store: IOSCaptureStore
     @EnvironmentObject var inspector: InspectorViewModel
+    @EnvironmentObject var captures: TunnelCaptureReader
 
     var body: some View {
         NavigationStack {
@@ -33,7 +34,15 @@ struct TrafficScreen: View {
             .navigationDestination(for: Flow.ID.self) { id in
                 FlowDetailScreen(flowID: id)
             }
+            .onAppear { captures.startPolling() }
+            .onDisappear { captures.stopPolling() }
         }
+    }
+
+    private var tunnelRecords: [TunnelCaptureRecord] {
+        guard !inspector.searchText.isEmpty else { return captures.records }
+        let q = inspector.searchText.lowercased()
+        return captures.records.filter { $0.host.lowercased().contains(q) || $0.note.lowercased().contains(q) }
     }
 
     private var filtered: [Flow] {
@@ -45,7 +54,7 @@ struct TrafficScreen: View {
 
     @ViewBuilder
     private var content: some View {
-        if store.flows.isEmpty {
+        if store.flows.isEmpty && tunnelRecords.isEmpty {
             ScrollView {
                 VStack(spacing: 16) {
                     EmptyCaptureState(isRunning: store.isRunning)
@@ -57,11 +66,27 @@ struct TrafficScreen: View {
             }
         } else {
             List {
-                ForEach(inspector.domainGroups(filtered)) { group in
-                    NavigationLink(value: SidebarSelection.domain(group.name)) {
-                        DomainRow(group: group)
+                if !tunnelRecords.isEmpty {
+                    Section {
+                        ForEach(tunnelRecords) { record in
+                            TunnelConnectionRow(record: record)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        }
+                    } header: {
+                        Label("Live connections (VPN)", systemImage: "bolt.horizontal.circle")
+                    } footer: {
+                        Text("Captured by the packet tunnel. Connection-level for now — full HTTP decryption is the next step.")
                     }
-                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                }
+                if !inspector.domainGroups(filtered).isEmpty {
+                    Section("In-app proxy") {
+                        ForEach(inspector.domainGroups(filtered)) { group in
+                            NavigationLink(value: SidebarSelection.domain(group.name)) {
+                                DomainRow(group: group)
+                            }
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        }
+                    }
                 }
             }
             .listStyle(.plain)
@@ -72,8 +97,11 @@ struct TrafficScreen: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button("Clear", systemImage: "trash", role: .destructive) { store.clear() }
-                .disabled(store.flows.isEmpty)
+            Button("Clear", systemImage: "trash", role: .destructive) {
+                store.clear()
+                captures.clear()
+            }
+            .disabled(store.flows.isEmpty && captures.records.isEmpty)
         }
         ToolbarItem(placement: .topBarTrailing) {
             if let url = store.harExportURL(), !store.flows.isEmpty {
@@ -87,6 +115,41 @@ struct TrafficScreen: View {
             } label: {
                 Image(systemName: "ellipsis")
             }
+        }
+    }
+}
+
+/// One captured tunnel connection: host, protocol/note, and byte counts.
+private struct TunnelConnectionRow: View {
+    let record: TunnelCaptureRecord
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .foregroundStyle(record.closed ? Color.secondary : Color.green)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(record.host)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 8) {
+                    Text(record.note).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text("↑\(FlowPresentation.byteString(record.bytesUp)) ↓\(FlowPresentation.byteString(record.bytesDown))")
+                        .font(.caption2.monospaced()).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Text(":\(record.port)").font(.caption2.monospaced()).foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var icon: String {
+        switch record.proto {
+        case "UDP": return record.port == 53 ? "list.bullet.rectangle" : "dot.radiowaves.left.and.right"
+        default: return "lock.fill"
         }
     }
 }
