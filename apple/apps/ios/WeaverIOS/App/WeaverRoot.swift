@@ -15,6 +15,7 @@ import InspectorKit
 public struct WeaverRootView: View {
     @StateObject private var store = IOSCaptureStore()
     @StateObject private var inspector = InspectorViewModel()
+    @StateObject private var tunnel = TunnelController()
 
     public init() {}
 
@@ -23,8 +24,8 @@ public struct WeaverRootView: View {
             Tab("Traffic", systemImage: "arrow.left.arrow.right") {
                 TrafficScreen()
             }
-            Tab("Certificate", systemImage: "checkmark.seal") {
-                CertificateScreen()
+            Tab("Setup", systemImage: "checkmark.seal") {
+                SetupGuideScreen()
             }
             Tab("Settings", systemImage: "gearshape") {
                 SettingsScreen()
@@ -33,8 +34,10 @@ public struct WeaverRootView: View {
         .tabBarMinimizeBehavior(.onScrollDown)
         .environmentObject(store)
         .environmentObject(inspector)
+        .environmentObject(tunnel)
         .task {
             await store.bootstrap()
+            await tunnel.refresh()
             // Verification hook: `SIMCTL_CHILD_WEAVER_SELFTEST=1` (or the
             // env var on device) auto-runs the self-test on launch so real
             // capture can be confirmed without manual taps. No effect otherwise.

@@ -20,6 +20,7 @@ targets:
     dependencies:
       - package: Weaver
         product: WeaverIOS
+      - target: WeaverTunnel   # embed the packet-tunnel extension
     info:
       path: App/Info.plist
       properties:
@@ -42,7 +43,28 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.weaver.ios
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "6.0"
+        CODE_SIGN_ENTITLEMENTS: App/Weaver.entitlements
         # Device builds: automatic signing with the team on this machine. The
         # simulator ignores signing. Override DEVELOPMENT_TEAM per-machine.
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+
+  WeaverTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Tunnel
+    settings:
+      base:
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Tunnel/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.weaver.ios.tunnel
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "6.0"
+        CODE_SIGN_ENTITLEMENTS: Tunnel/WeaverTunnel.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    dependencies:
+      - sdk: NetworkExtension.framework

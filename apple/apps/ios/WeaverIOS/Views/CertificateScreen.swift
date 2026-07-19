@@ -3,76 +3,70 @@ import SwiftUI
 import WeaverCore
 import InspectorKit
 
-/// The signature screen. Cert onboarding is a first-class flow here, not a doc
-/// link, because it's the category's #1 complaint and its #1 silent failure.
+/// The certificate half of setup. Cert onboarding is a first-class flow, not a
+/// doc link, because it's the category's #1 complaint and its #1 silent failure.
 /// We show *live, verified* trust state (from `TrustEvaluator`, which actually
 /// asks SecTrust — not "did the user tap Install"), guide the two required
-/// steps, and never claim success we haven't confirmed.
-struct CertificateScreen: View {
+/// steps, and never claim success we haven't confirmed. Rendered inside the
+/// Setup Guide's scroll/navigation, so it owns no `NavigationStack` of its own.
+struct CertificateSetupSection: View {
     @EnvironmentObject var store: IOSCaptureStore
     @State private var showShare = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    TrustStatusCard(status: store.trustStatus)
+        VStack(spacing: 16) {
+            TrustStatusCard(status: store.trustStatus)
 
-                    StepCard(
-                        number: 1,
-                        title: "Install the profile",
-                        detail: "Opens a configuration profile carrying this install's CA. After tapping, go to Settings ▸ General ▸ VPN & Device Management ▸ Weaver CA ▸ Install.",
-                        isDone: store.trustStatus != .unknown
-                    ) {
-                        Button {
-                            showShare = true
-                        } label: {
-                            Label("Get Profile", systemImage: "arrow.down.doc")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.glassProminent)
-                    }
-
-                    StepCard(
-                        number: 2,
-                        title: "Enable Full Trust",
-                        detail: "Settings ▸ General ▸ About ▸ Certificate Trust Settings, then turn on the Weaver switch. This step silently doesn't appear for some users — if the switch is missing, reinstall the profile and reopen Settings.",
-                        isDone: store.trustStatus == .trusted
-                    ) {
-                        Button {
-                            if let url = URL(string: "App-Prefs:") {
-                                UIApplication.shared.open(url)
-                            }
-                        } label: {
-                            Label("Open Settings", systemImage: "gearshape")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.glass)
-                    }
-
-                    Button {
-                        store.refreshTrustStatus()
-                    } label: {
-                        Label("Re-check trust", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.capsule)
-
-                    CeilingNote()
+            StepCard(
+                number: 1,
+                title: "Install the profile",
+                detail: "Opens a configuration profile carrying this install's CA. After tapping, go to Settings ▸ General ▸ VPN & Device Management ▸ Weaver CA ▸ Install.",
+                isDone: store.trustStatus != .unknown
+            ) {
+                Button {
+                    showShare = true
+                } label: {
+                    Label("Get Profile", systemImage: "arrow.down.doc")
+                        .frame(maxWidth: .infinity)
                 }
-                .padding(16)
+                .buttonStyle(.glassProminent)
             }
-            .navigationTitle("Certificate")
-            .background(.background)
-            .onAppear { store.refreshTrustStatus() }
-            .sheet(isPresented: $showShare) {
-                if let url = store.mobileConfigURL() {
-                    ShareSheet(url: url)
-                } else {
-                    Text("Couldn't build the profile — the CA isn't ready yet.")
-                        .padding()
-                        .presentationDetents([.medium])
+
+            StepCard(
+                number: 2,
+                title: "Enable Full Trust",
+                detail: "Settings ▸ General ▸ About ▸ Certificate Trust Settings, then turn on the Weaver switch. This step silently doesn't appear for some users — if the switch is missing, reinstall the profile and reopen Settings.",
+                isDone: store.trustStatus == .trusted
+            ) {
+                Button {
+                    if let url = URL(string: "App-Prefs:") {
+                        UIApplication.shared.open(url)
+                    }
+                } label: {
+                    Label("Open Settings", systemImage: "gearshape")
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.glass)
+            }
+
+            Button {
+                store.refreshTrustStatus()
+            } label: {
+                Label("Re-check trust", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.capsule)
+
+            CeilingNote()
+        }
+        .onAppear { store.refreshTrustStatus() }
+        .sheet(isPresented: $showShare) {
+            if let url = store.mobileConfigURL() {
+                ShareSheet(url: url)
+            } else {
+                Text("Couldn't build the profile — the CA isn't ready yet.")
+                    .padding()
+                    .presentationDetents([.medium])
             }
         }
     }
