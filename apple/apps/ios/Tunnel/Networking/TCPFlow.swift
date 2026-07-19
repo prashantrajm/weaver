@@ -1,38 +1,52 @@
 import Foundation
 import Network
 
-/// One userspace TCP connection: it terminates the client's TCP locally (SYN /
-/// SYN-ACK / ACK, sequence tracking, FIN/RST) and relays the byte stream to the
-/// real destination over an `NWConnection` — a transparent proxy. Iteration 1
-/// handles the happy path (in-order segments, no retransmission), which covers
-/// the overwhelming majority of on-device connections; loss-recovery and
-/// window management are follow-ups. Decryption (MITM) replaces the plain relay
-/// in the next increment; here we still capture the connection + its host.
+/// One userspace TCP connection. It terminates the client's TCP locally (SYN /
+/// SYN-ACK / ACK, sequence tracking, FIN/RST) and moves the byte stream to an
+/// upstream `NWConnection`. Two upstream modes:
+///
+///  - **direct**: connect straight to the real destination (transparent relay).
+///    Used for non-443 traffic and as a fallback when we can't read an SNI.
+///  - **mitm**: connect to the in-extension `ProxyServer` on loopback and send a
+///    `CONNECT <sni>:443` preamble, so the proxy terminates TLS with a minted
+///    leaf and decrypts the exchange. Used for 443 once we sniff the SNI.
+///
+/// Happy-path only for now (in-order segments, no loss recovery), which covers
+/// the overwhelming majority of on-device connections.
 final class TCPFlow: @unchecked Sendable {
     let key: FlowKey
     private let queue: DispatchQueue
     private let writePacket: (Data) -> Void
     private let onRecord: (TunnelCaptureRecord) -> Void
     private let onClose: (FlowKey) -> Void
+    private let mitmProxyPort: UInt16?     // nil → always direct
 
     private var conn: NWConnection?
     private var state: State = .idle
-    private var rcvNext: UInt32 = 0      // next client seq we expect
-    private var sndNext: UInt32 = 0      // our next seq to the client
+    private var rcvNext: UInt32 = 0
+    private var sndNext: UInt32 = 0
     private var record: TunnelCaptureRecord
-    private var sniffedHost = false
 
     private enum State { case idle, synReceived, established, closing, closed }
+    private enum Upstream { case undecided, direct, mitm }
+    private var upstream: Upstream
+    private var upstreamReady = false       // NWConnection is .ready
+    private var connectAcked = false        // MITM: CONNECT 200 consumed
+    private var pendingUp = Data()          // client bytes queued until upstream is usable
+    private var connectRespBuf = Data()     // MITM: accumulates the CONNECT response
 
-    init(key: FlowKey, syn: TCPSegment, queue: DispatchQueue,
+    init(key: FlowKey, syn: TCPSegment, queue: DispatchQueue, mitmProxyPort: UInt16?,
          writePacket: @escaping (Data) -> Void,
          onRecord: @escaping (TunnelCaptureRecord) -> Void,
          onClose: @escaping (FlowKey) -> Void) {
         self.key = key
         self.queue = queue
+        self.mitmProxyPort = mitmProxyPort
         self.writePacket = writePacket
         self.onRecord = onRecord
         self.onClose = onClose
+        // 443 with a proxy available → decide direct-vs-mitm once we see the SNI.
+        self.upstream = (key.destPort == 443 && mitmProxyPort != nil) ? .undecided : .direct
         self.record = TunnelCaptureRecord(
             id: UUID(), startedAt: Date(),
             proto: "TCP", host: key.destDotted, destIP: key.destDotted,
@@ -48,9 +62,9 @@ final class TCPFlow: @unchecked Sendable {
         case .idle where seg.isSYN:
             rcvNext = seg.seq &+ 1
             sndNext = UInt32.random(in: 1...0x7fffffff)
-            openUpstream()
-            sendFlags(0x12)                 // SYN|ACK
-            sndNext = sndNext &+ 1          // SYN consumes one seq
+            if upstream == .direct { openDirect() }   // MITM defers until SNI
+            sendFlags(0x12)                            // SYN|ACK
+            sndNext = sndNext &+ 1
             state = .synReceived
             emit()
 
@@ -62,9 +76,9 @@ final class TCPFlow: @unchecked Sendable {
             if seg.isRST { teardown(); return }
             if seg.isFIN {
                 rcvNext = rcvNext &+ 1
-                sendFlags(0x10)             // ACK the FIN
+                sendFlags(0x10)
                 conn?.send(content: nil, isComplete: true, completion: .idempotent)
-                sendFlags(0x11)             // our FIN|ACK
+                sendFlags(0x11)
                 sndNext = sndNext &+ 1
                 state = .closing
                 return
@@ -76,30 +90,75 @@ final class TCPFlow: @unchecked Sendable {
         }
     }
 
-    /// Forward in-order client payload to the upstream and ACK it.
     private func deliverIfData(_ seg: TCPSegment) {
         guard !seg.payload.isEmpty else { return }
-        guard seg.seq == rcvNext else { return }   // iteration 1: in-order only
+        guard seg.seq == rcvNext else { return }   // in-order only
         rcvNext = rcvNext &+ UInt32(seg.payload.count)
         record.bytesUp += seg.payload.count
         sniffHost(seg.payload)
-        conn?.send(content: seg.payload, completion: .contentProcessed { _ in })
+        if upstream == .undecided {
+            decideUpstream(with: seg.payload)      // buffers into pendingUp itself
+        } else {
+            sendUpstream(seg.payload)
+        }
         sendFlags(0x10)                            // ACK
         emit()
     }
 
-    // MARK: - Upstream (to the real destination)
+    // MARK: - Upstream selection
 
-    private func openUpstream() {
-        let host = NWEndpoint.Host(key.destDotted)
-        guard let port = NWEndpoint.Port(rawValue: key.destPort) else { teardown(); return }
-        let c = NWConnection(host: host, port: port, using: .tcp)
+    /// First client bytes on a 443 flow: read the SNI to pick MITM, or fall back
+    /// to a direct relay if there's no readable SNI (non-TLS or split hello).
+    /// Client bytes always accumulate in `pendingUp` until an upstream is chosen
+    /// and usable, then `flushPending` sends them in order.
+    private func decideUpstream(with payload: Data) {
+        pendingUp.append(payload)
+        if let sni = TLSClientHello.serverName(from: pendingUp) {
+            record.host = sni; record.note = "HTTPS " + sni
+            upstream = .mitm
+            openMITM(sni: sni)
+        } else if pendingUp.count > 4096 {
+            upstream = .direct                    // give up sniffing; relay directly
+            openDirect()
+        }
+        // else: keep buffering; a later segment may complete the ClientHello.
+    }
+
+    /// Queue client bytes once an upstream is chosen. They buffer in `pendingUp`
+    /// until the upstream is usable (connected, and for MITM the CONNECT acked),
+    /// then flush in order.
+    private func sendUpstream(_ payload: Data) {
+        let usable = (upstream == .direct && upstreamReady) || (upstream == .mitm && connectAcked)
+        if usable {
+            conn?.send(content: payload, completion: .contentProcessed { _ in })
+        } else {
+            pendingUp.append(payload)
+        }
+    }
+
+    private func openDirect() {
+        guard conn == nil else { return }
+        openConnection(host: key.destDotted, port: key.destPort)
+    }
+
+    private func openMITM(sni: String) {
+        guard let proxyPort = mitmProxyPort else { openDirect(); return }
+        openConnection(host: "127.0.0.1", port: proxyPort)
+        // The CONNECT line is sent once the connection is .ready.
+        pendingConnectHost = "\(sni):\(key.destPort)"
+    }
+
+    private var pendingConnectHost: String?
+
+    private func openConnection(host: String, port: UInt16) {
+        guard let p = NWEndpoint.Port(rawValue: port) else { teardown(); return }
+        let c = NWConnection(host: NWEndpoint.Host(host), port: p, using: .tcp)
         self.conn = c
         c.stateUpdateHandler = { [weak self] st in
             guard let self else { return }
             self.queue.async {
                 switch st {
-                case .ready: self.receiveUpstream()
+                case .ready: self.upstreamDidBecomeReady()
                 case .failed, .cancelled: self.teardownFromUpstream()
                 default: break
                 }
@@ -108,17 +167,35 @@ final class TCPFlow: @unchecked Sendable {
         c.start(queue: queue)
     }
 
+    private func upstreamDidBecomeReady() {
+        upstreamReady = true
+        if let connectHost = pendingConnectHost {
+            // MITM: send CONNECT, then wait for the 200 before flushing client bytes.
+            let line = "CONNECT \(connectHost) HTTP/1.1\r\nHost: \(connectHost)\r\n\r\n"
+            conn?.send(content: Data(line.utf8), completion: .contentProcessed { _ in })
+            receiveUpstream()
+        } else {
+            // Direct: flush anything buffered and start relaying.
+            flushPending()
+            receiveUpstream()
+        }
+    }
+
+    private func flushPending() {
+        guard !pendingUp.isEmpty else { return }
+        conn?.send(content: pendingUp, completion: .contentProcessed { _ in })
+        pendingUp.removeAll()
+    }
+
+    // MARK: - Upstream → client
+
     private func receiveUpstream() {
         conn?.receive(minimumIncompleteLength: 1, maximumLength: 32 * 1024) { [weak self] data, _, done, error in
             guard let self else { return }
             self.queue.async {
-                if let data, !data.isEmpty {
-                    self.record.bytesDown += data.count
-                    self.sendData(data)
-                    self.emit()
-                }
+                if let data, !data.isEmpty { self.handleUpstreamData(data) }
                 if done || error != nil {
-                    self.sendFlags(0x11)          // FIN|ACK to client
+                    self.sendFlags(0x11)          // FIN|ACK
                     self.sndNext = self.sndNext &+ 1
                     self.finish()
                 } else {
@@ -128,41 +205,56 @@ final class TCPFlow: @unchecked Sendable {
         }
     }
 
+    private func handleUpstreamData(_ data: Data) {
+        if upstream == .mitm && !connectAcked {
+            connectRespBuf.append(data)
+            guard let range = connectRespBuf.range(of: Data("\r\n\r\n".utf8)) else { return }
+            connectAcked = true
+            let remainder = connectRespBuf.suffix(from: range.upperBound)
+            connectRespBuf.removeAll()
+            flushPending()                        // send the buffered ClientHello to the proxy
+            if !remainder.isEmpty { deliverDown(Data(remainder)) }
+            return
+        }
+        deliverDown(data)
+    }
+
+    private func deliverDown(_ data: Data) {
+        record.bytesDown += data.count
+        sendData(data)
+        emit()
+    }
+
     // MARK: - Emit packets to the client
 
     private func sendFlags(_ flags: UInt8) {
-        let pkt = TCPSegment.buildPacket(
+        writePacket(TCPSegment.buildPacket(
             source: key.dest, destination: key.source,
             sourcePort: key.destPort, destPort: key.sourcePort,
-            seq: sndNext, ack: rcvNext, flags: flags, window: 0xffff)
-        writePacket(pkt)
+            seq: sndNext, ack: rcvNext, flags: flags, window: 0xffff))
     }
 
     private func sendData(_ data: Data) {
-        // Segment to a safe payload size (MTU 1500 − IP/TCP headers).
         let mss = 1400
         var offset = 0
         while offset < data.count {
             let chunk = data.subdata(in: offset..<min(offset + mss, data.count))
-            let pkt = TCPSegment.buildPacket(
+            writePacket(TCPSegment.buildPacket(
                 source: key.dest, destination: key.source,
                 sourcePort: key.destPort, destPort: key.sourcePort,
-                seq: sndNext, ack: rcvNext, flags: 0x18, window: 0xffff, payload: chunk)  // PSH|ACK
-            writePacket(pkt)
+                seq: sndNext, ack: rcvNext, flags: 0x18, window: 0xffff, payload: chunk))
             sndNext = sndNext &+ UInt32(chunk.count)
             offset += chunk.count
         }
     }
 
-    // MARK: - Host sniffing + capture record
+    // MARK: - Host sniffing (for :80; :443 handled in decideUpstream)
 
     private func sniffHost(_ payload: Data) {
-        guard !sniffedHost else { return }
-        if key.destPort == 443, let sni = TLSClientHello.serverName(from: payload) {
-            record.host = sni; record.note = "TLS " + sni; sniffedHost = true
-        } else if key.destPort == 80, let line = httpRequestLine(payload) {
+        guard key.destPort == 80, record.note == "HTTP" || record.note.hasPrefix("HTTP") else { return }
+        if let line = httpRequestLine(payload) {
             record.host = line.host ?? record.host
-            record.note = "HTTP " + line.summary; sniffedHost = true
+            record.note = "HTTP " + line.summary
         }
     }
 
@@ -190,13 +282,9 @@ final class TCPFlow: @unchecked Sendable {
         onClose(key)
     }
 
-    private func teardown() {
-        conn?.cancel(); conn = nil
-        finish()
-    }
+    private func teardown() { conn?.cancel(); conn = nil; finish() }
 
     private func teardownFromUpstream() {
-        // Upstream died before/while established: RST the client.
         sendFlags(0x14)   // RST|ACK
         finish()
     }

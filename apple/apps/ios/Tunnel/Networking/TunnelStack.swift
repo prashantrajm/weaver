@@ -21,14 +21,16 @@ final class TunnelStack {
     private let queue = DispatchQueue(label: "com.weaver.tunnel.stack")
     private let writePacket: (Data) -> Void
     private let store: SharedCaptureStore?
+    private let mitmProxyPort: UInt16?
     private let log = Logger(subsystem: "com.weaver.ios.tunnel", category: "stack")
 
     private var tcp: [FlowKey: TCPFlow] = [:]
     private var udp: [FlowKey: UDPFlow] = [:]
 
-    init(writePacket: @escaping (Data) -> Void, store: SharedCaptureStore?) {
+    init(writePacket: @escaping (Data) -> Void, store: SharedCaptureStore?, mitmProxyPort: UInt16?) {
         self.writePacket = writePacket
         self.store = store
+        self.mitmProxyPort = mitmProxyPort
     }
 
     /// Called for each IP packet iOS hands us from the tunnel.
@@ -46,7 +48,7 @@ final class TunnelStack {
             if let flow = tcp[key] {
                 flow.handle(seg)
             } else if seg.isSYN && !seg.isACK {
-                let flow = TCPFlow(key: key, syn: seg, queue: queue,
+                let flow = TCPFlow(key: key, syn: seg, queue: queue, mitmProxyPort: mitmProxyPort,
                                    writePacket: writePacket,
                                    onRecord: { [weak self] in self?.store?.upsert($0) },
                                    onClose: { [weak self] k in self?.tcp[k] = nil })

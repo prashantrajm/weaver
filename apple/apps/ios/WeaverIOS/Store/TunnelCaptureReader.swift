@@ -1,6 +1,7 @@
 #if os(iOS)
 import Foundation
 import Combine
+import WeaverCore
 
 /// App-side view of the connections the tunnel extension captures. The
 /// extension is the writer; this polls the shared App Group file and publishes
@@ -29,17 +30,20 @@ struct TunnelRecordID: Hashable {
 
 @MainActor
 final class TunnelCaptureReader: ObservableObject {
+    /// Connection-level records (all TCP/UDP, incl. non-HTTP).
     @Published private(set) var records: [TunnelCaptureRecord] = []
+    /// Decrypted HTTP(S) flows captured by the tunnel's MITM proxy.
+    @Published private(set) var flowRecords: [SharedFlowRecord] = []
 
     private let appGroupID = "group.com.weaver.ios"
     private var timer: Timer?
-    private var fileURL: URL? {
-        FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
-            .appendingPathComponent("captures.json")
+    private var container: URL? {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID)
     }
+    private var capturesURL: URL? { container?.appendingPathComponent("captures.json") }
+    private var flowsURL: URL? { container?.appendingPathComponent("flows.json") }
 
-    /// Poll the shared file while a view is showing capture data.
+    /// Poll the shared files while a view is showing capture data.
     func startPolling() {
         guard timer == nil else { return }
         reload()
@@ -54,18 +58,22 @@ final class TunnelCaptureReader: ObservableObject {
     }
 
     private func reload() {
-        guard let url = fileURL, let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder.tunnelISO.decode([TunnelCaptureRecord].self, from: data) else {
-            return
+        if let url = capturesURL, let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder.tunnelISO.decode([TunnelCaptureRecord].self, from: data) {
+            let sorted = decoded.sorted { $0.startedAt > $1.startedAt }
+            if sorted != records { records = sorted }
         }
-        // Newest first for display.
-        let sorted = decoded.sorted { $0.startedAt > $1.startedAt }
-        if sorted != records { records = sorted }
+        if let url = flowsURL, let data = try? Data(contentsOf: url),
+           let decoded = try? JSONDecoder.tunnelISO.decode([SharedFlowRecord].self, from: data) {
+            if decoded != flowRecords { flowRecords = decoded }
+        }
     }
 
     func clear() {
-        if let url = fileURL { try? FileManager.default.removeItem(at: url) }
+        if let url = capturesURL { try? FileManager.default.removeItem(at: url) }
+        if let url = flowsURL { try? FileManager.default.removeItem(at: url) }
         records = []
+        flowRecords = []
     }
 }
 

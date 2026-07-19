@@ -44,14 +44,18 @@ public final class ProxyServer: @unchecked Sendable {
 
     public private(set) var state: ProxyState = .stopped
 
+    /// - Parameter threads: event-loop thread count. Defaults to the core count;
+    ///   pass a small number (e.g. 2) inside the memory-capped iOS packet-tunnel
+    ///   extension to keep the footprint down.
     public init(host: String = "127.0.0.1", port: Int = 9090, ca: CertificateAuthority,
-                events: ProxyEventHandler?, filter: HostFilter = HostFilter()) {
+                events: ProxyEventHandler?, filter: HostFilter = HostFilter(),
+                threads: Int = System.coreCount) {
         self.host = host
         self.port = port
         self.ca = ca
         self.events = events
         self.filter = filter
-        self.group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+        self.group = MultiThreadedEventLoopGroup(numberOfThreads: max(1, threads))
 
         var clientConfig = HTTPClient.Configuration()
         clientConfig.redirectConfiguration = .disallow   // capture redirects as their own flows

@@ -39,13 +39,19 @@ struct TrafficScreen: View {
             }
             .onAppear { captures.startPolling() }
             .onDisappear { captures.stopPolling() }
+            .onChange(of: captures.flowRecords, initial: true) { _, records in
+                store.setTunnelFlows(records)
+            }
         }
     }
 
     private var tunnelRecords: [TunnelCaptureRecord] {
-        guard !inspector.searchText.isEmpty else { return captures.records }
+        // 443/TCP is shown decrypted in the request list, so keep only the rest
+        // here (DNS, QUIC, plain HTTP, other TCP) to avoid duplicating rows.
+        let base = captures.records.filter { !($0.proto == "TCP" && $0.port == 443) }
+        guard !inspector.searchText.isEmpty else { return base }
         let q = inspector.searchText.lowercased()
-        return captures.records.filter { $0.host.lowercased().contains(q) || $0.note.lowercased().contains(q) }
+        return base.filter { $0.host.lowercased().contains(q) || $0.note.lowercased().contains(q) }
     }
 
     private var filtered: [Flow] {
@@ -69,6 +75,18 @@ struct TrafficScreen: View {
             }
         } else {
             List {
+                if !inspector.domainGroups(filtered).isEmpty {
+                    Section {
+                        ForEach(inspector.domainGroups(filtered)) { group in
+                            NavigationLink(value: SidebarSelection.domain(group.name)) {
+                                DomainRow(group: group)
+                            }
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        }
+                    } header: {
+                        Label("Requests (decrypted)", systemImage: "lock.open.fill")
+                    }
+                }
                 if !tunnelRecords.isEmpty {
                     Section {
                         ForEach(tunnelRecords) { record in
@@ -78,19 +96,9 @@ struct TrafficScreen: View {
                             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         }
                     } header: {
-                        Label("Live connections (VPN)", systemImage: "bolt.horizontal.circle")
+                        Label("Other connections", systemImage: "dot.radiowaves.left.and.right")
                     } footer: {
-                        Text("Captured by the packet tunnel. A green dot means the connection is live, grey means closed. Connection-level for now — full HTTP decryption is the next step.")
-                    }
-                }
-                if !inspector.domainGroups(filtered).isEmpty {
-                    Section("In-app proxy") {
-                        ForEach(inspector.domainGroups(filtered)) { group in
-                            NavigationLink(value: SidebarSelection.domain(group.name)) {
-                                DomainRow(group: group)
-                            }
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        }
+                        Text("Non-HTTPS traffic (DNS, QUIC, plain HTTP). A green dot means live, grey means closed. QUIC can't be decrypted — it's part of the honest ceiling.")
                     }
                 }
             }

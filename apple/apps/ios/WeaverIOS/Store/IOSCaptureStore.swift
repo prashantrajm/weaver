@@ -14,7 +14,13 @@ import InspectorKit
 @MainActor
 final class IOSCaptureStore: ObservableObject {
 
+    /// Unified request list shown in the inspector: decrypted flows from the
+    /// tunnel plus any from the in-app proxy / self-test. Rebuilt from the two
+    /// private sources below.
     @Published private(set) var flows: [Flow] = []
+    private var proxyFlows: [Flow] = []      // in-app proxy / self-test
+    private var tunnelFlows: [Flow] = []     // decrypted by the packet-tunnel MITM
+
     @Published private(set) var isRunning = false
     @Published private(set) var statusMessage = "Not running"
     @Published private(set) var trustStatus: TrustEvaluator.Status = .unknown
@@ -62,9 +68,26 @@ final class IOSCaptureStore: ObservableObject {
             self.caManager = manager
             self.statusMessage = "Ready"
             self.refreshTrustStatus()
+            // Share the trusted CA with the tunnel extension so it mints leaves
+            // the device already trusts. Written every launch to stay in sync.
+            exportCAToAppGroup(manager.authority)
         case .failure(let error):
             self.statusMessage = "CA init failed: \(error)"
         }
+    }
+
+    /// Shared App Group directory the tunnel extension reads the CA from.
+    static let appGroupID = "group.com.weaver.ios"
+    static var sharedCADirectory: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
+            .appendingPathComponent("CA", isDirectory: true)
+    }
+
+    private func exportCAToAppGroup(_ authority: CertificateAuthority) {
+        guard let dir = Self.sharedCADirectory else { return }
+        do { try SharedCAStorage.write(authority, to: dir) }
+        catch { NSLog("[Weaver] CA export failed: \(error)") }
     }
 
     func start() {
@@ -97,11 +120,28 @@ final class IOSCaptureStore: ObservableObject {
 
     func toggleRun() { isRunning ? stop() : start() }
 
-    func clear() { flows.removeAll() }
+    func clear() {
+        proxyFlows.removeAll()
+        tunnelFlows.removeAll()
+        rebuildFlows()
+    }
 
     /// Clear only the requests for one domain (keeps everything else).
     func clearDomain(_ host: String) {
-        flows.removeAll { $0.host == host }
+        proxyFlows.removeAll { $0.host == host }
+        tunnelFlows.removeAll { $0.host == host }
+        rebuildFlows()
+    }
+
+    /// Replace the tunnel-decrypted flows (polled from the App Group by the
+    /// reader) and merge them with the in-app-proxy flows for display.
+    func setTunnelFlows(_ records: [SharedFlowRecord]) {
+        tunnelFlows = records.map { $0.toFlow() }
+        rebuildFlows()
+    }
+
+    private func rebuildFlows() {
+        flows = (tunnelFlows + proxyFlows).sorted { $0.startedAt < $1.startedAt }
     }
 
     // MARK: - Bypass list
@@ -193,7 +233,8 @@ final class IOSCaptureStore: ObservableObject {
 
     fileprivate func ingestStart(_ flow: Flow) {
         guard isRecording else { return }
-        flows.append(flow)
+        proxyFlows.append(flow)
+        rebuildFlows()
     }
 
     fileprivate func ingestComplete(_ flow: Flow) {

@@ -68,3 +68,5 @@ targets:
         DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
     dependencies:
       - sdk: NetworkExtension.framework
+      - package: Weaver
+        product: WeaverCore
