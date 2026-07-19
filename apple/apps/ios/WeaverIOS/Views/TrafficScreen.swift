@@ -34,6 +34,9 @@ struct TrafficScreen: View {
             .navigationDestination(for: Flow.ID.self) { id in
                 FlowDetailScreen(flowID: id)
             }
+            .navigationDestination(for: TunnelRecordID.self) { ref in
+                TunnelConnectionDetailScreen(recordID: ref.value)
+            }
             .onAppear { captures.startPolling() }
             .onDisappear { captures.stopPolling() }
         }
@@ -69,13 +72,15 @@ struct TrafficScreen: View {
                 if !tunnelRecords.isEmpty {
                     Section {
                         ForEach(tunnelRecords) { record in
-                            TunnelConnectionRow(record: record)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            NavigationLink(value: TunnelRecordID(value: record.id)) {
+                                TunnelConnectionRow(record: record)
+                            }
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         }
                     } header: {
                         Label("Live connections (VPN)", systemImage: "bolt.horizontal.circle")
                     } footer: {
-                        Text("Captured by the packet tunnel. Connection-level for now — full HTTP decryption is the next step.")
+                        Text("Captured by the packet tunnel. A green dot means the connection is live, grey means closed. Connection-level for now — full HTTP decryption is the next step.")
                     }
                 }
                 if !inspector.domainGroups(filtered).isEmpty {
@@ -119,16 +124,22 @@ struct TrafficScreen: View {
     }
 }
 
-/// One captured tunnel connection: host, protocol/note, and byte counts.
+/// One captured tunnel connection: live/closed dot, host, protocol/note, bytes.
 private struct TunnelConnectionRow: View {
     let record: TunnelCaptureRecord
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundStyle(record.closed ? Color.secondary : Color.green)
-                .frame(width: 26)
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: TunnelConnectionStyle.icon(record))
+                    .font(.system(size: 18))
+                    .foregroundStyle(.tint)
+                    .frame(width: 26)
+                Circle()
+                    .fill(record.closed ? Color.secondary : Color.green)
+                    .frame(width: 8, height: 8)
+                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1.5))
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.host)
                     .font(.subheadline.weight(.medium))
@@ -145,12 +156,22 @@ private struct TunnelConnectionRow: View {
         }
         .padding(.vertical, 2)
     }
+}
 
-    private var icon: String {
+/// Shared icon/label logic for a tunnel connection (row + detail).
+enum TunnelConnectionStyle {
+    static func icon(_ record: TunnelCaptureRecord) -> String {
         switch record.proto {
         case "UDP": return record.port == 53 ? "list.bullet.rectangle" : "dot.radiowaves.left.and.right"
-        default: return "lock.fill"
+        default: return record.port == 443 ? "lock.fill" : "network"
         }
+    }
+
+    static func kind(_ record: TunnelCaptureRecord) -> String {
+        if record.proto == "UDP" { return record.port == 53 ? "DNS lookup" : (record.port == 443 ? "QUIC (encrypted)" : "UDP") }
+        if record.port == 443 { return "HTTPS (encrypted)" }
+        if record.port == 80 { return "HTTP" }
+        return "TCP"
     }
 }
 

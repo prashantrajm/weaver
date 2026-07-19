@@ -20,6 +20,13 @@ struct TunnelCaptureRecord: Codable, Identifiable, Equatable {
     var closed: Bool
 }
 
+/// Navigation value for a tunnel connection. Wraps the UUID in its own type so
+/// it doesn't collide with the `Flow.ID` (also a UUID) navigation destination
+/// used by the in-app-proxy detail screen.
+struct TunnelRecordID: Hashable {
+    let value: UUID
+}
+
 @MainActor
 final class TunnelCaptureReader: ObservableObject {
     @Published private(set) var records: [TunnelCaptureRecord] = []
