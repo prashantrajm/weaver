@@ -10,11 +10,13 @@ import PackageDescription
 let package = Package(
     name: "Weaver",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v14),
+        .iOS("26.0"),
     ],
     products: [
         .library(name: "WeaverCore", targets: ["WeaverCore"]),
         .library(name: "InspectorKit", targets: ["InspectorKit"]),
+        .library(name: "WeaverIOS", targets: ["WeaverIOS"]),
         .executable(name: "Weaver", targets: ["WeaverApp"]),
     ],
     dependencies: [
@@ -47,6 +49,14 @@ let package = Package(
             name: "InspectorKit",
             dependencies: ["WeaverCore"],
             path: "apps/shared/InspectorKit"
+        ),
+        // iOS app UI (SwiftUI, Liquid Glass, iOS 26+). Sources are wrapped in
+        // `#if os(iOS)` so `swift build` on macOS compiles them to nothing;
+        // the Xcode app shell in apps/ios consumes this as a library product.
+        .target(
+            name: "WeaverIOS",
+            dependencies: ["WeaverCore", "InspectorKit"],
+            path: "apps/ios/WeaverIOS"
         ),
         .executableTarget(
             name: "WeaverApp",

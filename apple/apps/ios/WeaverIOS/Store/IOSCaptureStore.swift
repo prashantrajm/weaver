@@ -1,0 +1,200 @@
+#if os(iOS)
+import Foundation
+import SwiftUI
+import WeaverCore
+import InspectorKit
+
+/// iOS session store — the `CaptureController` counterpart (same MVVM layer:
+/// WeaverCore → store → `InspectorViewModel` → thin views). Owns the CA, the
+/// capture backend, and the live flow list, and bridges backend events onto
+/// the main actor. The real backend is the NEPacketTunnelProvider extension
+/// (iOS-P0/P1); until it lands, `DemoCaptureBackend`
+/// feeds sample flows so the inspector UI is fully drivable — the UI labels
+/// this honestly.
+@MainActor
+final class IOSCaptureStore: ObservableObject {
+
+    @Published private(set) var flows: [Flow] = []
+    @Published private(set) var isRunning = false
+    @Published private(set) var statusMessage = "Not running"
+    @Published private(set) var trustStatus: TrustEvaluator.Status = .unknown
+    @Published var isRecording = true
+    @Published var blockHTTP3 = HTTP3Policy.blockHTTP3.value {
+        didSet { HTTP3Policy.blockHTTP3.value = blockHTTP3 }
+    }
+
+    // Hosts to tunnel without decryption (pinned/noisy). Shared with the backend.
+    let hostFilter = HostFilter()
+    @Published private(set) var bypassList: [String] = []
+
+    /// True while the capture source is the demo generator, so every screen can
+    /// label the data as sample data instead of pretending it's live traffic.
+    @Published private(set) var isDemoCapture = false
+
+    private var caManager: CAManager?
+    private var backend: CaptureBackend?
+    private var eventBridge: EventBridge?
+
+    var authority: CertificateAuthority? { caManager?.authority }
+    var certificatePEMURL: URL? { caManager?.certificatePEMURL }
+
+    /// Loads (or generates) the CA off the main thread. Keychain access can
+    /// block on a system prompt, so this must not run during view init.
+    func bootstrap() async {
+        guard caManager == nil else { return }
+        statusMessage = "Preparing certificate authority…"
+        let result: Result<CAManager, Error> = await Task.detached(priority: .userInitiated) {
+            do { return .success(try CAManager()) } catch { return .failure(error) }
+        }.value
+        switch result {
+        case .success(let manager):
+            self.caManager = manager
+            self.statusMessage = "Ready"
+            self.refreshTrustStatus()
+        case .failure(let error):
+            self.statusMessage = "CA init failed: \(error)"
+        }
+    }
+
+    func start() {
+        guard backend == nil else { return }
+        guard caManager != nil else {
+            statusMessage = "Still preparing CA…"
+            return
+        }
+        let bridge = EventBridge(store: self)
+        self.eventBridge = bridge
+        // Packet-tunnel backend is iOS-P0/P1; fall back to the demo generator
+        // and say so, rather than failing silently or over-promising.
+        let backend: CaptureBackend = DemoCaptureBackend()
+        self.backend = backend
+        backend.start(events: bridge)
+        isDemoCapture = backend is DemoCaptureBackend
+        isRunning = true
+        statusMessage = isDemoCapture
+            ? "Demo capture — VPN tunnel ships in iOS-P1"
+            : "Capturing this device's traffic"
+    }
+
+    func stop() {
+        backend?.stop()
+        backend = nil
+        eventBridge = nil
+        isRunning = false
+        isDemoCapture = false
+        statusMessage = "Stopped"
+    }
+
+    func toggleRun() { isRunning ? stop() : start() }
+
+    func clear() { flows.removeAll() }
+
+    /// Clear only the requests for one domain (keeps everything else).
+    func clearDomain(_ host: String) {
+        flows.removeAll { $0.host == host }
+    }
+
+    // MARK: - Bypass list
+
+    func addBypass(_ pattern: String) {
+        let p = pattern.trimmingCharacters(in: .whitespaces)
+        guard !p.isEmpty else { return }
+        hostFilter.addBypass(p)
+        bypassList = hostFilter.bypassPatterns
+    }
+
+    func removeBypass(_ pattern: String) {
+        hostFilter.removeBypass(pattern)
+        bypassList = hostFilter.bypassPatterns
+    }
+
+    // MARK: - Certificate trust
+
+    /// Re-evaluate whether the OS actually trusts our CA for TLS — a *verified*
+    /// check (mint a test leaf, ask SecTrust), not "the user tapped Install".
+    /// The Full Trust toggle silently failing is the category's top footgun.
+    func refreshTrustStatus() {
+        guard let authority = caManager?.authority else { return }
+        Task.detached(priority: .userInitiated) {
+            let status = TrustEvaluator.evaluate(authority: authority)
+            await MainActor.run { self.trustStatus = status }
+        }
+    }
+
+    /// A ready-to-install configuration profile carrying the CA certificate,
+    /// written to a temp file for the share sheet / Files app.
+    func mobileConfigURL() -> URL? {
+        guard let authority = caManager?.authority else { return nil }
+        do {
+            let data = try MobileConfig.profileData(for: authority)
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Weaver-CA.mobileconfig")
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            statusMessage = "Profile export failed: \(error)"
+            return nil
+        }
+    }
+
+    /// Captured session as a HAR file on disk, for the share sheet.
+    func harExportURL() -> URL? {
+        let har = HARDocument.buildHAR(flows: flows)
+        guard let data = try? JSONSerialization.data(withJSONObject: har, options: [.prettyPrinted]) else {
+            return nil
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Weaver-Session.har")
+        try? data.write(to: url, options: .atomic)
+        return url
+    }
+
+    // MARK: - Event ingestion (called from EventBridge on the main actor)
+
+    fileprivate func ingestStart(_ flow: Flow) {
+        guard isRecording else { return }
+        flows.append(flow)
+    }
+
+    fileprivate func ingestComplete(_ flow: Flow) {
+        // Reference type already mutated in place; nudge SwiftUI to re-render.
+        objectWillChange.send()
+    }
+
+    fileprivate func ingestUpdate(_ flow: Flow) {
+        objectWillChange.send()
+    }
+
+    fileprivate func ingestLog(_ message: String) {
+        statusMessage = message
+    }
+}
+
+/// Where captured flows come from. The packet-tunnel extension backend
+/// (NETunnelProviderManager + App Group IPC) plugs in here in iOS-P1;
+/// `DemoCaptureBackend` is the stand-in that keeps the UI honest and testable.
+@MainActor
+protocol CaptureBackend: AnyObject {
+    func start(events: ProxyEventHandler)
+    func stop()
+}
+
+/// Forwards backend callbacks (which may arrive off-main) to the main actor.
+private final class EventBridge: ProxyEventHandler, @unchecked Sendable {
+    private weak var store: IOSCaptureStore?
+    init(store: IOSCaptureStore) { self.store = store }
+
+    func flowDidStart(_ flow: Flow) {
+        Task { @MainActor in self.store?.ingestStart(flow) }
+    }
+    func flowDidComplete(_ flow: Flow) {
+        Task { @MainActor in self.store?.ingestComplete(flow) }
+    }
+    func flowDidUpdate(_ flow: Flow) {
+        Task { @MainActor in self.store?.ingestUpdate(flow) }
+    }
+    func proxyDidLog(_ message: String) {
+        Task { @MainActor in self.store?.ingestLog(message) }
+    }
+}
+#endif
