@@ -27,9 +27,20 @@ final class IOSCaptureStore: ObservableObject {
     let hostFilter = HostFilter()
     @Published private(set) var bypassList: [String] = []
 
-    /// True while the capture source is the demo generator, so every screen can
-    /// label the data as sample data instead of pretending it's live traffic.
-    @Published private(set) var isDemoCapture = false
+    /// Result of the last on-device self-test (real request through the proxy).
+    @Published var selfTestState: SelfTestState = .idle
+    enum SelfTestState: Equatable {
+        case idle
+        case running
+        case passed(status: Int)
+        case failed(String)
+    }
+
+    // Loopback listener the device's Wi-Fi proxy points at.
+    let listenHost = "127.0.0.1"
+    let listenPort = 9090
+    /// What the user enters as the HTTP proxy in iOS Wi-Fi settings.
+    var proxyAddress: String { "\(listenHost):\(listenPort)" }
 
     private var caManager: CAManager?
     private var backend: CaptureBackend?
@@ -58,22 +69,22 @@ final class IOSCaptureStore: ObservableObject {
 
     func start() {
         guard backend == nil else { return }
-        guard caManager != nil else {
+        guard let authority = caManager?.authority else {
             statusMessage = "Still preparing CA…"
             return
         }
         let bridge = EventBridge(store: self)
-        self.eventBridge = bridge
-        // Packet-tunnel backend is iOS-P0/P1; fall back to the demo generator
-        // and say so, rather than failing silently or over-promising.
-        let backend: CaptureBackend = DemoCaptureBackend()
-        self.backend = backend
-        backend.start(events: bridge)
-        isDemoCapture = backend is DemoCaptureBackend
-        isRunning = true
-        statusMessage = isDemoCapture
-            ? "Demo capture — VPN tunnel ships in iOS-P1"
-            : "Capturing this device's traffic"
+        let backend = LocalProxyBackend(authority: authority, filter: hostFilter,
+                                        host: listenHost, port: listenPort)
+        do {
+            try backend.start(events: bridge)
+            self.eventBridge = bridge
+            self.backend = backend
+            self.isRunning = true
+            self.statusMessage = "Proxy on \(proxyAddress) — set your Wi-Fi proxy to capture"
+        } catch {
+            self.statusMessage = "Couldn't start proxy: \(error)"
+        }
     }
 
     func stop() {
@@ -81,7 +92,6 @@ final class IOSCaptureStore: ObservableObject {
         backend = nil
         eventBridge = nil
         isRunning = false
-        isDemoCapture = false
         statusMessage = "Stopped"
     }
 
@@ -137,6 +147,36 @@ final class IOSCaptureStore: ObservableObject {
         }
     }
 
+    // MARK: - Self-test (prove real capture end-to-end on-device)
+
+    /// Fire one real HTTPS request through the running proxy. It appears in the
+    /// capture list as a genuine, decrypted flow — proving the whole pipeline
+    /// works on this device without first configuring the Wi-Fi proxy or
+    /// trusting the CA. Auto-starts the proxy if it isn't running.
+    func runSelfTest() {
+        guard let authority = caManager?.authority else {
+            selfTestState = .failed("CA not ready")
+            return
+        }
+        if backend == nil { start() }
+        guard backend != nil else {
+            selfTestState = .failed(statusMessage)
+            return
+        }
+        selfTestState = .running
+        let port = listenPort
+        Task {
+            do {
+                let status = try await ProxySelfTest.run(through: port, ca: authority)
+                self.selfTestState = .passed(status: status)
+                self.statusMessage = "Self-test passed — real flow captured (HTTP \(status))"
+            } catch {
+                self.selfTestState = .failed(String(describing: error))
+                self.statusMessage = "Self-test failed: \(error)"
+            }
+        }
+    }
+
     /// Captured session as a HAR file on disk, for the share sheet.
     func harExportURL() -> URL? {
         let har = HARDocument.buildHAR(flows: flows)
@@ -170,12 +210,13 @@ final class IOSCaptureStore: ObservableObject {
     }
 }
 
-/// Where captured flows come from. The packet-tunnel extension backend
-/// (NETunnelProviderManager + App Group IPC) plugs in here in iOS-P1;
-/// `DemoCaptureBackend` is the stand-in that keeps the UI honest and testable.
+/// Where captured flows come from. `LocalProxyBackend` (the in-app proxy) is the
+/// real backend today; the NEPacketTunnelProvider extension — automatic,
+/// backgrounded, zero-config capture — plugs in behind this same seam next.
 @MainActor
 protocol CaptureBackend: AnyObject {
-    func start(events: ProxyEventHandler)
+    var listenAddress: String { get }
+    func start(events: ProxyEventHandler) throws
     func stop()
 }
 

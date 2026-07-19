@@ -57,12 +57,12 @@ struct SettingsScreen: View {
 
                 Section {
                     LabeledContent("Pricing", value: "One license · no nags")
-                    LabeledContent("Capture backend",
-                                   value: store.isDemoCapture ? "Demo (iOS-P1 pending)" : "Live tunnel")
+                    LabeledContent("Capture backend", value: "In-app proxy")
+                    LabeledContent("Proxy address", value: store.proxyAddress)
                 } header: {
                     Text("About")
                 } footer: {
-                    Text("On-device HTTPS inspection — no desktop, no jailbreak. The packet-tunnel capture backend ships in iOS-P1; the UI here runs on sample data until then.")
+                    Text("On-device HTTPS inspection — no desktop, no jailbreak. Capture runs through an in-app proxy: point this device's Wi-Fi proxy at the address above (foreground only). Automatic, backgrounded capture via a VPN network extension is the next step.")
                 }
             }
             .navigationTitle("Settings")

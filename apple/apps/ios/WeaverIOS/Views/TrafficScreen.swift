@@ -46,14 +46,17 @@ struct TrafficScreen: View {
     @ViewBuilder
     private var content: some View {
         if store.flows.isEmpty {
-            EmptyCaptureState(isRunning: store.isRunning)
+            ScrollView {
+                VStack(spacing: 16) {
+                    EmptyCaptureState(isRunning: store.isRunning)
+                        .frame(maxWidth: .infinity)
+                    CaptureSetupCard()
+                }
+                .padding(.top, 40)
+                .padding(.bottom, 120)
+            }
         } else {
             List {
-                if store.isDemoCapture {
-                    DemoDataBanner()
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                        .listRowSeparator(.hidden)
-                }
                 ForEach(inspector.domainGroups(filtered)) { group in
                     NavigationLink(value: SidebarSelection.domain(group.name)) {
                         DomainRow(group: group)
@@ -162,18 +165,81 @@ private struct EmptyCaptureState: View {
     }
 }
 
-/// Honest label: the current data is demo, not live capture.
-private struct DemoDataBanner: View {
+/// How to capture real traffic: point the device's Wi-Fi proxy at the in-app
+/// proxy, or tap Run self-test to prove the pipeline works right now.
+private struct CaptureSetupCard: View {
+    @EnvironmentObject var store: IOSCaptureStore
+
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "wand.and.stars")
-            Text("Demo data — the on-device VPN tunnel ships in iOS-P1")
-                .font(.caption)
-            Spacer()
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Capture real traffic", systemImage: "point.3.filled.connected.trianglepath.dotted")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 6) {
+                stepLine("1", "Start the proxy below.")
+                stepLine("2", "iOS Settings ▸ Wi-Fi ▸ (i) ▸ Configure Proxy ▸ Manual.")
+                HStack(spacing: 6) {
+                    Text("3").font(.caption.weight(.bold).monospaced())
+                        .frame(width: 16)
+                    Text("Server ")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    + Text(store.listenHost).font(.subheadline.monospaced())
+                    + Text("  Port ").font(.subheadline).foregroundStyle(.secondary)
+                    + Text(verbatim: String(store.listenPort)).font(.subheadline.monospaced())
+                }
+                stepLine("4", "Install & trust the CA in the Certificate tab.")
+            }
+
+            Divider()
+
+            HStack(spacing: 10) {
+                Button {
+                    store.runSelfTest()
+                } label: {
+                    Label(selfTestLabel, systemImage: selfTestIcon)
+                }
+                .buttonStyle(.glassProminent)
+                .disabled(store.selfTestState == .running)
+
+                if case .passed(let status) = store.selfTestState {
+                    Text("HTTP \(status)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.green)
+                } else if case .failed = store.selfTestState {
+                    Text("failed").font(.caption).foregroundStyle(.red)
+                }
+                Spacer()
+            }
+            Text("The self-test sends one real HTTPS request through the proxy — no Wi-Fi setup needed — so a genuine decrypted flow appears above.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(.secondary)
-        .padding(10)
-        .glassEffect(.regular.tint(.yellow.opacity(0.18)), in: .rect(cornerRadius: 14))
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        .padding(.horizontal, 16)
+    }
+
+    private var selfTestLabel: String {
+        switch store.selfTestState {
+        case .running: return "Testing…"
+        default: return "Run self-test"
+        }
+    }
+    private var selfTestIcon: String {
+        switch store.selfTestState {
+        case .passed: return "checkmark.circle.fill"
+        case .failed: return "xmark.circle.fill"
+        default: return "bolt.fill"
+        }
+    }
+
+    private func stepLine(_ n: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(n).font(.caption.weight(.bold).monospaced()).frame(width: 16)
+            Text(text).font(.subheadline).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 #endif

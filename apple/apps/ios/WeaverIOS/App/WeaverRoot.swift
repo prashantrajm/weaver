@@ -33,7 +33,15 @@ public struct WeaverRootView: View {
         .tabBarMinimizeBehavior(.onScrollDown)
         .environmentObject(store)
         .environmentObject(inspector)
-        .task { await store.bootstrap() }
+        .task {
+            await store.bootstrap()
+            // Verification hook: `SIMCTL_CHILD_WEAVER_SELFTEST=1` (or the
+            // env var on device) auto-runs the self-test on launch so real
+            // capture can be confirmed without manual taps. No effect otherwise.
+            if ProcessInfo.processInfo.environment["WEAVER_SELFTEST"] == "1" {
+                store.runSelfTest()
+            }
+        }
     }
 }
 #endif
