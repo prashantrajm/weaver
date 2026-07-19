@@ -6,16 +6,19 @@ import WeaverCore
 /// (search text, type filter, sidebar selection, row selection) and all
 /// derivation of the visible flow list and sidebar groups from the session's
 /// captured flows. Views bind to this and stay presentation-only; the captured
-/// data itself lives in `CaptureController` (the session store).
+/// data itself lives in the session store (macOS: `CaptureController`,
+/// iOS: `IOSCaptureStore`). Shared by both Apple apps.
 @MainActor
-final class InspectorViewModel: ObservableObject {
-    @Published var searchText = ""
-    @Published var typeFilter: FlowKind? = nil
-    @Published var sidebarSelection: SidebarSelection = .allTraffic
-    @Published var selectedFlowID: Flow.ID?
+public final class InspectorViewModel: ObservableObject {
+    @Published public var searchText = ""
+    @Published public var typeFilter: FlowKind? = nil
+    @Published public var sidebarSelection: SidebarSelection = .allTraffic
+    @Published public var selectedFlowID: Flow.ID?
+
+    public init() {}
 
     /// Flows matching the current sidebar selection, type filter, and search.
-    func filtered(_ flows: [Flow]) -> [Flow] {
+    public func filtered(_ flows: [Flow]) -> [Flow] {
         flows.filter { flow in
             if let typeFilter, flow.kind != typeFilter { return false }
             switch sidebarSelection {
@@ -32,17 +35,17 @@ final class InspectorViewModel: ObservableObject {
     }
 
     /// The currently selected flow, resolved against the live flow list.
-    func selectedFlow(in flows: [Flow]) -> Flow? {
+    public func selectedFlow(in flows: [Flow]) -> Flow? {
         flows.first { $0.id == selectedFlowID }
     }
 
     /// Traffic grouped by client app, most-active first.
-    func appGroups(_ flows: [Flow]) -> [FlowGroup] {
+    public func appGroups(_ flows: [Flow]) -> [FlowGroup] {
         group(flows, by: { $0.appDisplayName })
     }
 
     /// Traffic grouped by host, most-active first.
-    func domainGroups(_ flows: [Flow]) -> [FlowGroup] {
+    public func domainGroups(_ flows: [Flow]) -> [FlowGroup] {
         group(flows, by: { $0.host })
     }
 
@@ -56,14 +59,18 @@ final class InspectorViewModel: ObservableObject {
 }
 
 /// A named group of flows (by app or domain) with its request count.
-struct FlowGroup: Identifiable {
-    let name: String
-    let count: Int
-    var id: String { name }
+public struct FlowGroup: Identifiable, Hashable {
+    public let name: String
+    public let count: Int
+    public var id: String { name }
+    public init(name: String, count: Int) {
+        self.name = name
+        self.count = count
+    }
 }
 
 /// What the sidebar is filtering the traffic list by.
-enum SidebarSelection: Hashable {
+public enum SidebarSelection: Hashable {
     case allTraffic
     case app(String)
     case domain(String)

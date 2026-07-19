@@ -1,5 +1,6 @@
 import SwiftUI
 import WeaverCore
+import InspectorKit
 import UniformTypeIdentifiers
 
 /// Bottom status bar: full-text filter, selection count, throughput, and HAR

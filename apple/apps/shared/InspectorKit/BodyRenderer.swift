@@ -1,21 +1,28 @@
 import Foundation
+#if canImport(AppKit)
 import AppKit
+/// Platform image type so image previews share one code path (NSImage/UIImage).
+public typealias PlatformImage = NSImage
+#elseif canImport(UIKit)
+import UIKit
+public typealias PlatformImage = UIImage
+#endif
 
 /// Shared, content-aware rendering of a message body so the on-screen view and
 /// the copy button produce the exact same (beautified) text.
-enum BodyRenderer {
+public enum BodyRenderer {
 
-    static func isImage(_ contentType: String?) -> Bool {
+    public static func isImage(_ contentType: String?) -> Bool {
         (contentType ?? "").lowercased().contains("image")
     }
 
-    static func image(from data: Data) -> NSImage? {
-        NSImage(data: data)
+    public static func image(from data: Data) -> PlatformImage? {
+        PlatformImage(data: data)
     }
 
     /// Beautified text for a body. JSON is pretty-printed (unless `raw`), other
     /// text types are shown as UTF-8, and binary falls back to a hex dump.
-    static func text(_ data: Data, contentType: String?, raw: Bool) -> String {
+    public static func text(_ data: Data, contentType: String?, raw: Bool) -> String {
         let ct = (contentType ?? "").lowercased()
         if !raw, ct.contains("json"), let pretty = prettyJSON(data) {
             return pretty

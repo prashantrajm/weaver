@@ -1,5 +1,6 @@
 import SwiftUI
 import WeaverCore
+import InspectorKit
 
 /// Split Request | Response detail pane with Header/Query/Body/Raw tabs and
 /// content-aware pretty-printing (M1.3).

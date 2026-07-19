@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import WeaverCore
+import InspectorKit
 
 /// Owns the CA, the proxy, and the live capture state. Bridges proxy events
 /// (delivered on NIO threads) onto the main actor for the SwiftUI inspector.

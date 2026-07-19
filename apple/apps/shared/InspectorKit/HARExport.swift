@@ -4,25 +4,25 @@ import UniformTypeIdentifiers
 
 /// Exports captured flows as an HTTP Archive (HAR 1.2) file (M1.5). HAR is the
 /// interchange format browser devtools and other debugging proxies read, so sessions move
-/// cleanly between tools.
-struct HARDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
+/// cleanly between tools. Shared by both Apple apps.
+public struct HARDocument: FileDocument {
+    public static var readableContentTypes: [UTType] { [.json] }
 
-    let flows: [Flow]
+    public let flows: [Flow]
 
-    init(flows: [Flow]) { self.flows = flows }
+    public init(flows: [Flow]) { self.flows = flows }
 
-    init(configuration: ReadConfiguration) throws {
+    public init(configuration: ReadConfiguration) throws {
         self.flows = []   // import not supported yet
     }
 
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    public func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         let har = Self.buildHAR(flows: flows)
         let data = try JSONSerialization.data(withJSONObject: har, options: [.prettyPrinted])
         return FileWrapper(regularFileWithContents: data)
     }
 
-    static func buildHAR(flows: [Flow]) -> [String: Any] {
+    public static func buildHAR(flows: [Flow]) -> [String: Any] {
         let iso = ISO8601DateFormatter()
         let entries: [[String: Any]] = flows.map { flow in
             var entry: [String: Any] = [

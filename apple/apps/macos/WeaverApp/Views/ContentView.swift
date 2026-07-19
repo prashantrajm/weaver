@@ -1,5 +1,6 @@
 import SwiftUI
 import WeaverCore
+import InspectorKit
 
 /// Top-level three-region layout — the conventional inspector shell:
 /// sidebar (grouping) · traffic list + type tabs · detail pane, with a toolbar

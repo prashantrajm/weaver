@@ -1,5 +1,6 @@
 import SwiftUI
 import WeaverCore
+import InspectorKit
 
 /// Content-aware body viewer: pretty-prints JSON/XML, falls back to UTF-8 text,
 /// and shows a hex dump for binary payloads (M1.3). Rendering is shared with the

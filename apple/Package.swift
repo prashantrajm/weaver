@@ -14,6 +14,7 @@ let package = Package(
     ],
     products: [
         .library(name: "WeaverCore", targets: ["WeaverCore"]),
+        .library(name: "InspectorKit", targets: ["InspectorKit"]),
         .executable(name: "Weaver", targets: ["WeaverApp"]),
     ],
     dependencies: [
@@ -40,9 +41,16 @@ let package = Package(
             ],
             path: "core/WeaverCore"
         ),
+        // Shared MVVM layer (view models + presentation) reused by the macOS
+        // and iOS apps. UI-framework-agnostic SwiftUI helpers only — no views.
+        .target(
+            name: "InspectorKit",
+            dependencies: ["WeaverCore"],
+            path: "apps/shared/InspectorKit"
+        ),
         .executableTarget(
             name: "WeaverApp",
-            dependencies: ["WeaverCore"],
+            dependencies: ["WeaverCore", "InspectorKit"],
             path: "apps/macos/WeaverApp"
         ),
         .testTarget(

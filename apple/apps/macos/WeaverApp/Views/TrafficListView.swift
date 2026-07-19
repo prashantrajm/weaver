@@ -1,5 +1,6 @@
 import SwiftUI
 import WeaverCore
+import InspectorKit
 
 /// Type-filter quick tabs above the traffic list (All · HTTP · HTTPS · JSON …).
 struct TypeFilterTabs: View {

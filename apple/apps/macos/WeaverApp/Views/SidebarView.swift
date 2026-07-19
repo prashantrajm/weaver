@@ -1,5 +1,6 @@
 import SwiftUI
 import WeaverCore
+import InspectorKit
 
 /// Left sidebar: traffic grouped by client app and by domain — the core
 /// app-and-domain mental model (M1.3). Counts update live. Grouping and selection
