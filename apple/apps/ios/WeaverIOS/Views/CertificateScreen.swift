@@ -3,6 +3,22 @@ import SwiftUI
 import WeaverCore
 import InspectorKit
 
+/// Standalone certificate tab for the App Store (in-app-proxy) build, where
+/// there's no VPN "Setup" screen to host the certificate section. Wraps the
+/// shared `CertificateSetupSection` in its own navigation + title.
+struct CertificateScreen: View {
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                CertificateSetupSection()
+                    .padding(16)
+            }
+            .navigationTitle("Certificate")
+            .background(.background)
+        }
+    }
+}
+
 /// The certificate half of setup. Cert onboarding is a first-class flow, not a
 /// doc link, because it's the category's #1 complaint and its #1 silent failure.
 /// We show *live, verified* trust state (from `TrustEvaluator`, which actually

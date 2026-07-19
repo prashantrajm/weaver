@@ -7,16 +7,19 @@ import InspectorKit
 /// `@main` `App`; keeping it here lets the whole UI live in the shared SwiftPM
 /// library and build with `swift build`.
 ///
-/// Structure is native iOS 26: a `TabView` for the three top-level sections
-/// (Traffic · Certificate · Settings), each with its own `NavigationStack`.
-/// Liquid Glass is system-provided here — the floating tab bar, toolbars, and
-/// search field render on glass automatically; we add custom `glassEffect`
-/// surfaces only for app-specific chrome (the capture control, filter chips).
+/// Two flavors gated by `WEAVER_VPN` (see project.yml): the App Store build
+/// captures via an in-app proxy (Traffic · Certificate · Settings); the VPN build
+/// adds automatic packet-tunnel capture (Traffic · Setup · Settings).
+/// Liquid Glass is system-provided — the floating tab bar, toolbars, and search
+/// field render on glass automatically; we add custom `glassEffect` surfaces only
+/// for app-specific chrome (the capture control, filter chips).
 public struct WeaverRootView: View {
     @StateObject private var store = IOSCaptureStore()
     @StateObject private var inspector = InspectorViewModel()
-    @StateObject private var tunnel = TunnelController()
     @StateObject private var captures = TunnelCaptureReader()
+    #if WEAVER_VPN
+    @StateObject private var tunnel = TunnelController()
+    #endif
 
     public init() {}
 
@@ -25,9 +28,15 @@ public struct WeaverRootView: View {
             Tab("Traffic", systemImage: "arrow.left.arrow.right") {
                 TrafficScreen()
             }
+            #if WEAVER_VPN
             Tab("Setup", systemImage: "checkmark.seal") {
                 SetupGuideScreen()
             }
+            #else
+            Tab("Certificate", systemImage: "checkmark.seal") {
+                CertificateScreen()
+            }
+            #endif
             Tab("Settings", systemImage: "gearshape") {
                 SettingsScreen()
             }
@@ -35,11 +44,15 @@ public struct WeaverRootView: View {
         .tabBarMinimizeBehavior(.onScrollDown)
         .environmentObject(store)
         .environmentObject(inspector)
-        .environmentObject(tunnel)
         .environmentObject(captures)
+        #if WEAVER_VPN
+        .environmentObject(tunnel)
+        #endif
         .task {
             await store.bootstrap()
+            #if WEAVER_VPN
             await tunnel.refresh()
+            #endif
             // Verification hook: `SIMCTL_CHILD_WEAVER_SELFTEST=1` (or the
             // env var on device) auto-runs the self-test on launch so real
             // capture can be confirmed without manual taps. No effect otherwise.

@@ -1,4 +1,4 @@
-#if os(iOS)
+#if os(iOS) && WEAVER_VPN
 import Foundation
 import NetworkExtension
 import Combine

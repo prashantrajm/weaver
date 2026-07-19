@@ -278,9 +278,27 @@ private struct CaptureSetupCard: View {
                     + Text(store.listenHost).font(.subheadline.monospaced())
                     + Text("  Port ").font(.subheadline).foregroundStyle(.secondary)
                     + Text(verbatim: String(store.listenPort)).font(.subheadline.monospaced())
+                    Spacer()
+                    Button {
+                        UIPasteboard.general.string = store.listenHost
+                    } label: {
+                        Image(systemName: "doc.on.doc").font(.caption)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.capsule)
+                    .help("Copy server address")
                 }
                 stepLine("4", "Install & trust the CA in the Certificate tab.")
             }
+
+            Button {
+                if let url = URL(string: "App-Prefs:") { UIApplication.shared.open(url) }
+            } label: {
+                Label("Open Settings", systemImage: "gearshape")
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.capsule)
+            .font(.subheadline)
 
             Divider()
 

@@ -5,6 +5,23 @@ options:
     iOS: "26.0"
   createIntermediateGroups: true
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Two build flavors from one project:
+#
+#  • App Store (default, this file): in-app loopback proxy + manual Wi-Fi proxy.
+#    NO Network Extension, NO tunnel target embedded, minimal entitlements — so
+#    it is not a "VPN app" under guideline 5.4 (Organization-only). Ships from an
+#    individual account.
+#
+#  • VPN build (future, needs an Organization account): automatic packet-tunnel
+#    capture. To enable, in the Weaver app target below:
+#      1. add back the dependency:   - target: WeaverTunnel
+#      2. swap entitlements:  CODE_SIGN_ENTITLEMENTS: App/Weaver-VPN.entitlements
+#      3. add the flag:       SWIFT_ACTIVE_COMPILATION_CONDITIONS: WEAVER_VPN
+#    The tunnel extension target (WeaverTunnel) and all VPN code stay in the
+#    repo; the flag gates the VPN UI/lifecycle in/out.
+# ─────────────────────────────────────────────────────────────────────────────
+
 packages:
   Weaver:
     # The monorepo Swift package (apple/) — provides WeaverCore, InspectorKit,
@@ -20,7 +37,8 @@ targets:
     dependencies:
       - package: Weaver
         product: WeaverIOS
-      - target: WeaverTunnel   # embed the packet-tunnel extension
+      # VPN build: uncomment to embed the packet-tunnel extension.
+      # - target: WeaverTunnel
     info:
       path: App/Info.plist
       properties:
@@ -43,12 +61,17 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.weaver.ios
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "6.0"
+        # App Store build: minimal entitlements (no Network Extension / App Group).
+        # VPN build: swap to App/Weaver-VPN.entitlements (see header).
         CODE_SIGN_ENTITLEMENTS: App/Weaver.entitlements
         # Device builds: automatic signing with the team on this machine. The
         # simulator ignores signing. Override DEVELOPMENT_TEAM per-machine.
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
 
+  # Packet-tunnel VPN extension — kept in the repo for the future VPN build; NOT
+  # embedded in the App Store app (see header). Only shipped when re-added as a
+  # dependency of the Weaver target above.
   WeaverTunnel:
     type: app-extension
     platform: iOS
@@ -63,6 +86,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.weaver.ios.tunnel
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "6.0"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: WEAVER_VPN
         CODE_SIGN_ENTITLEMENTS: Tunnel/WeaverTunnel.entitlements
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}

@@ -1,4 +1,4 @@
-#if os(iOS)
+#if os(iOS) && WEAVER_VPN
 import SwiftUI
 import NetworkExtension
 import WeaverCore
