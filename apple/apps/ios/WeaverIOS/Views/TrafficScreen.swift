@@ -6,7 +6,7 @@ import InspectorKit
 /// The main capture screen. iPhone default per the plan: a domain-grouped list
 /// (scannable folder rows with per-domain counts), a
 /// content-type filter chip bar, an inline search field, and a
-/// floating Liquid Glass capture control. Tapping a domain pushes its request
+/// start/stop control in the toolbar. Tapping a domain pushes its request
 /// list; tapping a request pushes the detail screen.
 struct TrafficScreen: View {
     @EnvironmentObject var store: IOSCaptureStore
@@ -15,12 +15,7 @@ struct TrafficScreen: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottom) {
-                content
-                CaptureControlBar()
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-            }
+            content
             .navigationTitle("Traffic")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $inspector.searchText, prompt: "Search URL, method, host")
@@ -71,7 +66,7 @@ struct TrafficScreen: View {
                     CaptureSetupCard()
                 }
                 .padding(.top, 40)
-                .padding(.bottom, 120)
+                .padding(.bottom, 24)
             }
         } else {
             List {
@@ -103,7 +98,6 @@ struct TrafficScreen: View {
                 }
             }
             .listStyle(.plain)
-            .contentMargins(.bottom, 88, for: .scrollContent)  // clear the capture bar
         }
     }
 
@@ -128,6 +122,13 @@ struct TrafficScreen: View {
             } label: {
                 Image(systemName: "ellipsis")
             }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button(store.isRunning ? "Stop" : "Start",
+                   systemImage: store.isRunning ? "stop.fill" : "play.fill") {
+                store.toggleRun()
+            }
+            .tint(store.isRunning ? .red : .green)
         }
     }
 }
@@ -208,41 +209,6 @@ private struct DomainRow: View {
     }
 }
 
-/// Floating Liquid Glass start/stop control with a live status line.
-private struct CaptureControlBar: View {
-    @EnvironmentObject var store: IOSCaptureStore
-
-    var body: some View {
-        GlassEffectContainer(spacing: 12) {
-            HStack(spacing: 12) {
-                Button {
-                    store.toggleRun()
-                } label: {
-                    Label(store.isRunning ? "Stop" : "Start",
-                          systemImage: store.isRunning ? "stop.fill" : "play.fill")
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.glassProminent)
-                .tint(store.isRunning ? .red : .green)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(store.isRunning ? "Capturing" : "Idle")
-                        .font(.caption.weight(.semibold))
-                    Text(store.statusMessage)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(10)
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
-        }
-    }
-}
-
 private struct EmptyCaptureState: View {
     let isRunning: Bool
     var body: some View {
@@ -252,14 +218,15 @@ private struct EmptyCaptureState: View {
         } description: {
             Text(isRunning
                  ? "Requests from this device will appear here as apps make them."
-                 : "Tap Start to begin capturing this device's HTTPS traffic.")
+                 : "Tap the play button in the top right to begin capturing this device's HTTPS traffic.")
         }
     }
 }
 
 /// How to capture real traffic: point the device's Wi-Fi proxy at the in-app
 /// proxy, or tap Run self-test to prove the pipeline works right now.
-private struct CaptureSetupCard: View {
+/// Shared between the Traffic empty state and Settings ▸ How to Set Up.
+struct CaptureSetupCard: View {
     @EnvironmentObject var store: IOSCaptureStore
 
     var body: some View {
@@ -268,7 +235,7 @@ private struct CaptureSetupCard: View {
                 .font(.headline)
 
             VStack(alignment: .leading, spacing: 6) {
-                stepLine("1", "Start the proxy below.")
+                stepLine("1", "Tap the play button in the top right to start the proxy.")
                 stepLine("2", "iOS Settings ▸ Wi-Fi ▸ (i) ▸ Configure Proxy ▸ Manual.")
                 HStack(spacing: 6) {
                     Text("3").font(.caption.weight(.bold).monospaced())
@@ -288,7 +255,7 @@ private struct CaptureSetupCard: View {
                     .buttonBorderShape(.capsule)
                     .help("Copy server address")
                 }
-                stepLine("4", "Install & trust the CA in the Certificate tab.")
+                stepLine("4", "Install & trust the CA in Settings ▸ Certificates.")
             }
 
             Button {
