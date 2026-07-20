@@ -3,19 +3,18 @@ import SwiftUI
 import WeaverCore
 import InspectorKit
 
-/// Standalone certificate tab for the App Store (in-app-proxy) build, where
-/// there's no VPN "Setup" screen to host the certificate section. Wraps the
-/// shared `CertificateSetupSection` in its own navigation + title.
+/// Certificate detail screen, pushed from Settings ▸ Tools in the App Store
+/// (in-app-proxy) build. Wraps the shared `CertificateSetupSection`; navigation
+/// is owned by the presenting stack.
 struct CertificateScreen: View {
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                CertificateSetupSection()
-                    .padding(16)
-            }
-            .navigationTitle("Certificate")
-            .background(.background)
+        ScrollView {
+            CertificateSetupSection()
+                .padding(16)
         }
+        .navigationTitle("Certificates")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(.background)
     }
 }
 

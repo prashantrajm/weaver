@@ -8,8 +8,9 @@ import InspectorKit
 /// library and build with `swift build`.
 ///
 /// Two flavors gated by `WEAVER_VPN` (see project.yml): the App Store build
-/// captures via an in-app proxy (Traffic · Certificate · Settings); the VPN build
-/// adds automatic packet-tunnel capture (Traffic · Setup · Settings).
+/// captures via an in-app proxy (Traffic · Settings — certificates live inside
+/// Settings); the VPN build adds automatic packet-tunnel capture
+/// (Traffic · Setup · Settings).
 /// Liquid Glass is system-provided — the floating tab bar, toolbars, and search
 /// field render on glass automatically; we add custom `glassEffect` surfaces only
 /// for app-specific chrome (the capture control, filter chips).
@@ -20,6 +21,7 @@ public struct WeaverRootView: View {
     #if WEAVER_VPN
     @StateObject private var tunnel = TunnelController()
     #endif
+    @AppStorage(AppearanceMode.storageKey) private var appearance: AppearanceMode = .system
 
     public init() {}
 
@@ -32,16 +34,13 @@ public struct WeaverRootView: View {
             Tab("Setup", systemImage: "checkmark.seal") {
                 SetupGuideScreen()
             }
-            #else
-            Tab("Certificate", systemImage: "checkmark.seal") {
-                CertificateScreen()
-            }
             #endif
             Tab("Settings", systemImage: "gearshape") {
                 SettingsScreen()
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .preferredColorScheme(appearance.colorScheme)
         .environmentObject(store)
         .environmentObject(inspector)
         .environmentObject(captures)
