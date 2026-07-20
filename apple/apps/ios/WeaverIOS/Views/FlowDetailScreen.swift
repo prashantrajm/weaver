@@ -68,12 +68,12 @@ struct FlowDetailScreen: View {
     }
 }
 
-/// Method · status · URL, on a glass card.
+/// Method · status · URL, then a timing block, on a glass card.
 private struct SummaryCard: View {
     let flow: Flow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text(flow.method)
                     .font(.caption.weight(.bold).monospaced())
@@ -92,10 +92,10 @@ private struct SummaryCard: View {
                 .font(.footnote.monospaced())
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+
+            TimingBlock(flow: flow)
+
             HStack(spacing: 14) {
-                if let ms = flow.durationMS {
-                    metric("Duration", String(format: "%.0f ms", ms))
-                }
                 metric("Size", FlowPresentation.byteString(flow.responseSize))
                 metric("Client", FlowPresentation.clientName(flow))
             }
@@ -110,6 +110,50 @@ private struct SummaryCard: View {
             Text(label).font(.caption2).foregroundStyle(.secondary)
             Text(value).font(.caption.monospaced())
         }
+    }
+}
+
+/// Apple-style timing readout: a hero latency figure with a semantic speed
+/// color, alongside the wall-clock send time and completion state.
+private struct TimingBlock: View {
+    let flow: Flow
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Duration", systemImage: "timer")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .labelStyle(.titleAndIcon)
+                if let ms = flow.durationMS, let text = FlowPresentation.durationString(ms) {
+                    Text(text)
+                        .font(.title3.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(FlowPresentation.durationColor(ms))
+                        .contentTransition(.numericText())
+                } else {
+                    Text("In flight…")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.yellow)
+                }
+            }
+
+            Divider().frame(height: 34)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Sent", systemImage: "clock")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .labelStyle(.titleAndIcon)
+                Text(FlowPresentation.timestamp(flow.startedAt))
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.primary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 12))
     }
 }
 

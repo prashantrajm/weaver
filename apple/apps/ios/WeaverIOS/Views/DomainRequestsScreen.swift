@@ -61,7 +61,8 @@ struct DomainRequestsScreen: View {
     }
 }
 
-/// A single request row: status dot, method, path, status code, size/duration.
+/// A single request row: status dot, method, path, status code, size/duration,
+/// and — trailing — the wall-clock time it was sent plus its TLS lock.
 struct RequestRow: View {
     let flow: Flow
 
@@ -85,20 +86,26 @@ struct RequestRow: View {
                     Text(FlowPresentation.protoLabel(flow))
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
-                    if let ms = flow.durationMS {
-                        Text(String(format: "%.0f ms", ms))
+                    if let duration = FlowPresentation.durationString(flow.durationMS), let ms = flow.durationMS {
+                        Label(duration, systemImage: "timer")
+                            .labelStyle(.titleAndIcon)
                             .font(.caption2.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(FlowPresentation.durationColor(ms))
                     }
                     Text(FlowPresentation.byteString(flow.responseSize))
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer()
-            Image(systemName: flow.isTLS ? "lock.fill" : "lock.open")
-                .font(.caption2)
-                .foregroundStyle(flow.isTLS ? .green : .secondary)
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(FlowPresentation.timeOfDay(flow.startedAt))
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                Image(systemName: flow.isTLS ? "lock.fill" : "lock.open")
+                    .font(.caption2)
+                    .foregroundStyle(flow.isTLS ? .green : .secondary)
+            }
         }
         .padding(.vertical, 2)
     }

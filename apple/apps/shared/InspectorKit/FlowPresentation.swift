@@ -48,6 +48,36 @@ public enum FlowPresentation {
         return String(format: "%.1f MB", Double(bytes) / (1024 * 1024))
     }
 
+    /// Wall-clock time a request was sent, locale-aware with seconds
+    /// (e.g. "4:30:45 PM" or "16:30:45"). Used on the request rows.
+    public static func timeOfDay(_ date: Date) -> String {
+        date.formatted(date: .omitted, time: .standard)
+    }
+
+    /// Full timestamp with the date, for the detail card (e.g. "Jul 19, 4:30:45 PM").
+    public static func timestamp(_ date: Date) -> String {
+        date.formatted(.dateTime.month().day().hour().minute().second())
+    }
+
+    /// Latency, scaled to the magnitude: sub-second in ms, otherwise seconds.
+    /// `nil` while the response is still in flight.
+    public static func durationString(_ ms: Double?) -> String? {
+        guard let ms else { return nil }
+        if ms < 1000 { return String(format: "%.0f ms", ms) }
+        return String(format: "%.2f s", ms / 1000)
+    }
+
+    /// Duration color as a light speed cue — Apple-style semantic tinting:
+    /// green for snappy, orange for slow, red for very slow.
+    public static func durationColor(_ ms: Double) -> Color {
+        switch ms {
+        case ..<300: return .green
+        case ..<1000: return .primary
+        case ..<3000: return .orange
+        default: return .red
+        }
+    }
+
     /// `api.example.com` → `*.example.com` (nil for apex/short hosts and IPs).
     public static func parentWildcard(of host: String) -> String? {
         let parts = host.split(separator: ".")
