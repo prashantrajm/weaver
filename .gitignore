@@ -7,9 +7,7 @@ build-device/
 DerivedData/
 .DS_Store
 
-# Internal docs and agent tooling — not part of the public repo
-*.md
-!/README.md
+# Internal docs and agent tooling
 docs/
 .claude/
 AGENTS.md

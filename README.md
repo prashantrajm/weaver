@@ -6,6 +6,13 @@ Weaver captures HTTP(S) traffic, decrypts it with a locally generated root
 certificate, and lets you inspect requests and responses — headers, bodies,
 timing — in a native interface.
 
+## Download
+
+**[Download Weaver for macOS →](https://github.com/rajmauryafr/weaver/releases/latest)**
+
+Version 0.1.0, a signed and notarized DMG. Universal binary — Apple silicon and
+Intel. The iOS app is coming soon.
+
 ## Features
 
 - HTTP/1.1, HTTP/2, and WebSocket capture
@@ -13,13 +20,13 @@ timing — in a native interface.
 - Traffic grouped by client app and by domain, with live filtering and search
 - Request/response inspector with syntax-highlighted, collapsible bodies
 - HAR export
-- Standalone on-device capture on iOS — no desktop, no jailbreak
+- Standalone on-device capture on iOS — no desktop, no jailbreak *(coming soon)*
 
 ## Requirements
 
-- macOS 14 or later
-- Xcode 16 / Swift 6
-- iOS 26 or later for the iOS app
+- macOS 14 or later to run the app
+- Xcode 16 / Swift 6 to build from source
+- The iOS app is not released yet; it will require iOS 26 or later
 
 ## Build
 

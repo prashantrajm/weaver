@@ -90,7 +90,7 @@ spctl -a -vvv --type install "$DMG" || true
 xcrun stapler validate "$APP"
 xcrun stapler validate "$DMG"
 
-shasum -a 256 "$DMG" > "$DMG.sha256"
+(cd "$DIST" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
 
 echo
 echo "✅ Release artifacts in $DIST:"
