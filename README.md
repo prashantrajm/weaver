@@ -8,7 +8,7 @@ timing — in a native interface.
 
 ## Download
 
-**[Download Weaver for macOS →](https://github.com/prashantrajm/weaver/releases/latest)**
+**[Download Weaver for macOS →](https://github.com/prashantrajm/weaver/releases/tag/v0.1.0)**
 
 Version 0.1.0, a signed and notarized DMG. Universal binary — Apple silicon and
 Intel. The iOS app is coming soon.
