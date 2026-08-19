@@ -1,3 +1,4 @@
+# Build artifacts
 .build/
 build/
 build-device/
@@ -5,3 +6,11 @@ build-device/
 *.xcodeproj
 DerivedData/
 .DS_Store
+
+# Internal docs and agent tooling — not part of the public repo
+*.md
+!README.md
+docs/
+.claude/
+AGENTS.md
+CLAUDE.md

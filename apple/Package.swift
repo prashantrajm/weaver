@@ -2,11 +2,11 @@
 import PackageDescription
 
 // Monorepo layout:
-//   core/WeaverCore            shared Swift core (macOS today; iOS as it's extracted)
-//   apps/macos/WeaverApp macOS desktop-proxy app (SwiftPM executable)
-//   apps/ios                  standalone iOS app (Xcode project)
-//   apps/android              standalone Android app (future — Kotlin/Compose)
-//   tests/WeaverCoreTests      core unit + MITM integration tests
+//   core/WeaverCore        shared Swift core (macOS today; iOS as it's extracted)
+//   apps/macos/WeaverApp   macOS desktop-proxy app (SwiftPM executable)
+//   apps/ios               standalone iOS app (Xcode project)
+//   apps/android           standalone Android app (future — Kotlin/Compose)
+//   tests/WeaverCoreTests  core unit + MITM integration tests
 let package = Package(
     name: "Weaver",
     platforms: [

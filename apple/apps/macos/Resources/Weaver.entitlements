@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Hardened runtime entitlements for Developer ID distribution.
+         NOT sandboxed: the app installs its per-install root CA into the
+         System keychain via an admin prompt, which the sandbox forbids
+         (that's also why this ships outside the Mac App Store). -->
+
+    <!-- `osascript … with administrator privileges` for CA install/uninstall. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>
