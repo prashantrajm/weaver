@@ -37,7 +37,8 @@ public enum FlowPresentation {
     }
 
     public static func clientName(_ flow: Flow) -> String {
-        flow.clientDescription.split(separator: "/").first.map(String.init)
+        if let process = flow.clientProcess { return process.name }
+        return flow.clientDescription.split(separator: "/").first.map(String.init)
             ?? (flow.clientDescription.isEmpty ? "—" : flow.clientDescription)
     }
 
@@ -89,9 +90,12 @@ public enum FlowPresentation {
 extension Flow {
     /// Display name used to group traffic by client app. Must be identical in
     /// the sidebar grouping and the list filter, or selecting a group shows
-    /// nothing (best-effort: first token of the User-Agent, else "Unknown").
+    /// nothing. The exact originating process wins when the proxy resolved one
+    /// (local Mac traffic); otherwise it's best-effort: first token of the
+    /// User-Agent, else "Unknown".
     public var appDisplayName: String {
-        clientDescription.isEmpty
+        if let process = clientProcess { return process.name }
+        return clientDescription.isEmpty
             ? "Unknown"
             : (clientDescription.split(separator: "/").first.map(String.init) ?? clientDescription)
     }

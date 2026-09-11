@@ -24,7 +24,11 @@ public final class Flow: Identifiable, @unchecked Sendable {
     public var completedAt: Date?
 
     // Metadata
-    public var clientDescription: String   // best-effort client/app identity
+    public var clientDescription: String   // best-effort client/app identity (User-Agent)
+    /// Exact originating process, when the client is this machine. Set by the
+    /// proxy shortly after the connection is accepted (may arrive after the
+    /// first flow started; `flowDidUpdate` fires when it does).
+    public var clientProcess: ClientProcess?
     public var isTLS: Bool
     public var error: String?
     public var httpVersion: String = "HTTP/1.1"

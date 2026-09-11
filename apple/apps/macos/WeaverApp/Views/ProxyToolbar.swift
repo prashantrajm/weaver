@@ -25,6 +25,8 @@ struct ProxyToolbar: View {
                 Label("Clear", systemImage: "trash")
             }
 
+            thisMacToggle
+
             Spacer()
 
             statusPill
@@ -65,7 +67,7 @@ struct ProxyToolbar: View {
                 .fill(controller.isRunning ? Color.green : Color.secondary)
                 .frame(width: 8, height: 8)
             Text(controller.isRunning
-                 ? "Proxy \(controller.deviceProxyHost):\(controller.listenPort)"
+                 ? "Proxy \(controller.deviceProxyHost):\(controller.listenPort)\(macSuffix)"
                  : controller.statusMessage)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
@@ -82,6 +84,49 @@ struct ProxyToolbar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .background(Capsule().fill(Color.secondary.opacity(0.12)))
+    }
+
+    /// Short state of the Mac's own system proxy, appended to the status pill.
+    private var macSuffix: String {
+        switch controller.systemProxyState {
+        case .off: return ""
+        case .configuring: return " · configuring this Mac…"
+        case .on(let services): return " · this Mac (\(services.joined(separator: ", ")))"
+        case .failed: return " · this Mac: failed"
+        }
+    }
+
+    /// Route this Mac's traffic through Weaver automatically. Uses the
+    /// System Settings › Network mechanism (one admin prompt per launch) and
+    /// restores the previous settings when the proxy stops or the app quits.
+    private var thisMacToggle: some View {
+        Toggle(isOn: $controller.captureThisMac) {
+            Label("This Mac", systemImage: "desktopcomputer")
+        }
+        .toggleStyle(.button)
+        .tint(macTint)
+        .help(macHelp)
+    }
+
+    private var macTint: Color {
+        switch controller.systemProxyState {
+        case .on: return .green
+        case .failed: return .orange
+        case .off, .configuring: return .accentColor
+        }
+    }
+
+    private var macHelp: String {
+        switch controller.systemProxyState {
+        case .on(let services):
+            return "This Mac's HTTP/HTTPS is routed through Weaver (\(services.joined(separator: ", "))). Turn off to restore the previous network settings."
+        case .configuring:
+            return "Setting this Mac's system proxy…"
+        case .failed(let why):
+            return "Couldn't route this Mac through Weaver: \(why). Click to retry."
+        case .off:
+            return "Capture this Mac's own traffic: sets the system HTTP/HTTPS proxy automatically while the proxy runs (asks for admin once), and restores it on stop or quit."
+        }
     }
 
     private func copyProxyAddress() {

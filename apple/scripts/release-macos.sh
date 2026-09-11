@@ -10,7 +10,10 @@
 #
 # Required environment:
 #   WEAVER_SIGN_IDENTITY    "Developer ID Application: Name (TEAMID)"
-#   WEAVER_NOTARY_PROFILE   keychain profile from `xcrun notarytool store-credentials`
+#   and ONE of:
+#   WEAVER_NOTARY_PROFILE   keychain profile from `xcrun notarytool store-credentials` (local)
+#   WEAVER_NOTARY_KEY + WEAVER_NOTARY_KEY_ID + WEAVER_NOTARY_ISSUER
+#                           App Store Connect API key .p8 path, key id, issuer id (CI)
 # Optional:
 #   WEAVER_SKIP_NOTARIZE=1  build + sign + DMG only (dry run)
 set -euo pipefail
@@ -30,8 +33,16 @@ die() { echo "error: $*" >&2; exit 1; }
 security find-identity -v -p codesigning | grep -qF "$WEAVER_SIGN_IDENTITY" \
     || die "signing identity not found in the keychain: $WEAVER_SIGN_IDENTITY"
 
+NOTARY_ARGS=()
 if [[ "${WEAVER_SKIP_NOTARIZE:-0}" != "1" ]]; then
-    [[ -n "${WEAVER_NOTARY_PROFILE:-}" ]] || die "WEAVER_NOTARY_PROFILE is not set (xcrun notarytool store-credentials)"
+    if [[ -n "${WEAVER_NOTARY_PROFILE:-}" ]]; then
+        NOTARY_ARGS=(--keychain-profile "$WEAVER_NOTARY_PROFILE")
+    elif [[ -n "${WEAVER_NOTARY_KEY:-}" && -n "${WEAVER_NOTARY_KEY_ID:-}" && -n "${WEAVER_NOTARY_ISSUER:-}" ]]; then
+        [[ -f "$WEAVER_NOTARY_KEY" ]] || die "WEAVER_NOTARY_KEY does not exist: $WEAVER_NOTARY_KEY"
+        NOTARY_ARGS=(--key "$WEAVER_NOTARY_KEY" --key-id "$WEAVER_NOTARY_KEY_ID" --issuer "$WEAVER_NOTARY_ISSUER")
+    else
+        die "set WEAVER_NOTARY_PROFILE, or WEAVER_NOTARY_KEY + WEAVER_NOTARY_KEY_ID + WEAVER_NOTARY_ISSUER"
+    fi
 fi
 
 VERSION="$(plutil -extract CFBundleShortVersionString raw -o - "$PLIST")"
@@ -58,7 +69,7 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 if [[ "${WEAVER_SKIP_NOTARIZE:-0}" != "1" ]]; then
     echo "▸ Notarizing Weaver.app (this waits for Apple)…"
     ditto -c -k --keepParent "$APP" "$DIST/Weaver.zip"
-    xcrun notarytool submit "$DIST/Weaver.zip" --keychain-profile "$WEAVER_NOTARY_PROFILE" --wait
+    xcrun notarytool submit "$DIST/Weaver.zip" "${NOTARY_ARGS[@]}" --wait
     xcrun stapler staple "$APP"
     rm -f "$DIST/Weaver.zip"
 fi
@@ -81,7 +92,7 @@ if [[ "${WEAVER_SKIP_NOTARIZE:-0}" == "1" ]]; then
 fi
 
 echo "▸ Notarizing the DMG…"
-xcrun notarytool submit "$DMG" --keychain-profile "$WEAVER_NOTARY_PROFILE" --wait
+xcrun notarytool submit "$DMG" "${NOTARY_ARGS[@]}" --wait
 xcrun stapler staple "$DMG"
 
 echo "▸ Gatekeeper verification"

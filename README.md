@@ -8,16 +8,21 @@ timing — in a native interface.
 
 ## Download
 
-**[Download Weaver for macOS →](https://github.com/prashantrajm/weaver/releases/tag/v0.1.0)**
+**[Download Weaver for macOS →](https://github.com/prashantrajm/weaver/releases/latest)**
 
-Version 0.1.0, a signed and notarized DMG. Universal binary — Apple silicon and
+Latest release, a signed and notarized DMG. Universal binary — Apple silicon and
 Intel. The iOS app is coming soon.
 
 ## Features
 
 - HTTP/1.1, HTTP/2, and WebSocket capture
+- Captures the Mac it runs on automatically: the system HTTP/HTTPS proxy is set
+  when capture starts (one admin prompt) and restored when it stops or the app
+  quits. Turn off "This Mac" in the toolbar to capture other devices only.
 - HTTPS decryption via a per-install root CA generated on your machine
-- Traffic grouped by client app and by domain, with live filtering and search
+- Traffic grouped by client app and by domain, with live filtering and search.
+  On the Mac itself, apps are identified by their actual process (Safari,
+  Chrome, curl…) with real icons, not guessed from the User-Agent
 - Request/response inspector with syntax-highlighted, collapsible bodies
 - HAR export
 - Standalone on-device capture on iOS — no desktop, no jailbreak *(coming soon)*
