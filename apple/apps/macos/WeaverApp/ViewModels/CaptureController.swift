@@ -27,6 +27,36 @@ final class CaptureController: ObservableObject {
     let listenPort = 9090
     @Published private(set) var lanAddress: String?
 
+    // MARK: This Mac (automatic system proxy)
+
+    /// What the Mac's own system proxy is currently doing.
+    enum SystemProxyState: Equatable {
+        case off
+        case configuring
+        /// Services routed through Weaver, e.g. ["Wi-Fi"].
+        case on([String])
+        case failed(String)
+    }
+
+    /// Route this Mac's own traffic through Weaver whenever the proxy runs.
+    /// On by default: the Mac that installed Weaver should be captured with
+    /// zero setup. Persisted so an explicit opt-out sticks.
+    @Published var captureThisMac: Bool = UserDefaults.standard.object(forKey: "captureThisMac") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(captureThisMac, forKey: "captureThisMac")
+            guard isRunning else { return }
+            captureThisMac ? enableSystemProxy() : disableSystemProxy()
+        }
+    }
+    @Published private(set) var systemProxyState: SystemProxyState = .off
+
+    private var systemProxy: SystemProxyConfigurator?
+    /// The configurator isn't thread-safe and the admin prompt blocks, so every
+    /// call goes through this one serial queue, off the main actor.
+    private let systemProxyQueue = DispatchQueue(label: "com.weaver.system-proxy", qos: .userInitiated)
+    private var terminationObserver: NSObjectProtocol?
+    private var signalSources: [DispatchSourceSignal] = []
+
     /// The address to point a device at: the LAN IP if known, else loopback.
     var deviceProxyHost: String { lanAddress ?? "127.0.0.1" }
 
@@ -64,6 +94,18 @@ final class CaptureController: ObservableObject {
         case .failure(let error):
             self.statusMessage = "CA init failed: \(error)"
         }
+
+        let configurator = SystemProxyConfigurator(snapshotDirectory: Self.supportDirectory())
+        self.systemProxy = configurator
+        installRestoreOnExit()
+        await recoverSystemProxyIfNeeded(configurator)
+    }
+
+    private static func supportDirectory() -> URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = support.appendingPathComponent("Weaver", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
     }
 
     func start() {
@@ -83,15 +125,22 @@ final class CaptureController: ObservableObject {
             self.statusMessage = "Listening on \(deviceProxyHost):\(listenPort)"
         } catch {
             self.statusMessage = "Start failed: \(error)"
+            return
         }
+        if captureThisMac { enableSystemProxy() }
     }
 
     func stop() {
-        server?.shutdown()
-        server = nil
+        let server = self.server
+        self.server = nil
         eventBridge = nil
         isRunning = false
         statusMessage = "Stopped"
+        // Put the system proxy back *before* the listener goes away, so the
+        // Mac's apps never see a proxy that refuses connections.
+        disableSystemProxy {
+            server?.shutdown()
+        }
     }
 
     func toggleRun() { isRunning ? stop() : start() }
@@ -125,6 +174,106 @@ final class CaptureController: ObservableObject {
     func removeBypass(_ pattern: String) {
         hostFilter.removeBypass(pattern)
         bypassList = hostFilter.bypassPatterns
+    }
+
+    // MARK: - System proxy (this Mac)
+
+    /// Trusts the CA if needed (so HTTPS from Mac apps decrypts), then points
+    /// the Mac's network services at the proxy. Each step may show one admin
+    /// prompt; a cancelled prompt turns the option off rather than nagging.
+    private func enableSystemProxy() {
+        guard let systemProxy else { return }
+        systemProxyState = .configuring
+        let needsTrust = trustState != .trusted
+        let caManager = self.caManager
+        let port = listenPort
+        systemProxyQueue.async { [weak self] in
+            var trust: CAManager.TrustState?
+            if needsTrust, let caManager {
+                _ = try? caManager.installAndTrust()
+                trust = caManager.trustState()
+            }
+            let outcome = Result { try systemProxy.enable(host: "127.0.0.1", port: port) }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let trust { self.trustState = trust }
+                switch outcome {
+                case .success(let services):
+                    self.systemProxyState = .on(services)
+                    self.statusMessage = "Capturing this Mac (\(services.joined(separator: ", ")))"
+                case .failure(let error):
+                    self.systemProxyState = .failed(String(describing: error))
+                    self.statusMessage = "This Mac not captured: \(error)"
+                    if case SystemProxyConfigurator.Failure.authorizationCancelled = error {
+                        self.captureThisMac = false
+                    }
+                }
+            }
+        }
+    }
+
+    private func disableSystemProxy(then completion: (@MainActor @Sendable () -> Void)? = nil) {
+        guard let systemProxy, systemProxyState != .off else {
+            completion?()
+            return
+        }
+        systemProxyQueue.async { [weak self] in
+            let outcome = Result { try systemProxy.restore() }
+            Task { @MainActor [weak self] in
+                switch outcome {
+                case .success:
+                    self?.systemProxyState = .off
+                case .failure(let error):
+                    self?.systemProxyState = .failed(String(describing: error))
+                    self?.statusMessage = "Couldn't restore system proxy: \(error)"
+                }
+                completion?()
+            }
+        }
+    }
+
+    /// A snapshot left on disk means the last run died with the system proxy
+    /// pointing at us. Restore it before anything else — a proxy nobody is
+    /// listening on takes the whole Mac offline.
+    private func recoverSystemProxyIfNeeded(_ configurator: SystemProxyConfigurator) async {
+        guard configurator.hasSnapshot else { return }
+        let port = listenPort
+        let restored: Result<Bool, Error> = await withCheckedContinuation { continuation in
+            systemProxyQueue.async {
+                continuation.resume(returning: Result { try configurator.recoverIfNeeded(host: "127.0.0.1", port: port) })
+            }
+        }
+        switch restored {
+        case .success(true): statusMessage = "Restored this Mac's network settings from the last session"
+        case .success(false): break
+        case .failure(let error): statusMessage = "Couldn't restore system proxy: \(error)"
+        }
+    }
+
+    /// Restore synchronously on normal quit and on SIGINT/SIGTERM (Ctrl-C under
+    /// `swift run`, `kill`). A hard crash is covered by `recoverSystemProxyIfNeeded`.
+    private func installRestoreOnExit() {
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.restoreSystemProxyBlocking() }
+        }
+        for sig in [SIGINT, SIGTERM, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { [weak self] in
+                MainActor.assumeIsolated { self?.restoreSystemProxyBlocking() }
+                exit(0)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
+
+    private func restoreSystemProxyBlocking() {
+        guard let systemProxy, systemProxyState != .off else { return }
+        systemProxyQueue.sync { try? systemProxy.restore() }
+        systemProxyState = .off
     }
 
     // MARK: - Trust management

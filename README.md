@@ -16,6 +16,9 @@ Intel. The iOS app is coming soon.
 ## Features
 
 - HTTP/1.1, HTTP/2, and WebSocket capture
+- Captures the Mac it runs on automatically: the system HTTP/HTTPS proxy is set
+  when capture starts (one admin prompt) and restored when it stops or the app
+  quits. Turn off "This Mac" in the toolbar to capture other devices only.
 - HTTPS decryption via a per-install root CA generated on your machine
 - Traffic grouped by client app and by domain, with live filtering and search
 - Request/response inspector with syntax-highlighted, collapsible bodies
