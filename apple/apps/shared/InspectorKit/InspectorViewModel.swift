@@ -39,9 +39,11 @@ public final class InspectorViewModel: ObservableObject {
         flows.first { $0.id == selectedFlowID }
     }
 
-    /// Traffic grouped by client app, most-active first.
+    /// Traffic grouped by client app, most-active first. Groups backed by a
+    /// resolved local process carry its bundle path so the sidebar can show
+    /// the real app icon.
     public func appGroups(_ flows: [Flow]) -> [FlowGroup] {
-        group(flows, by: { $0.appDisplayName })
+        group(flows, by: { $0.appDisplayName }, bundlePath: { $0.clientProcess?.bundlePath })
     }
 
     /// Traffic grouped by host, most-active first.
@@ -49,12 +51,18 @@ public final class InspectorViewModel: ObservableObject {
         group(flows, by: { $0.host })
     }
 
-    private func group(_ flows: [Flow], by key: (Flow) -> String) -> [FlowGroup] {
+    private func group(_ flows: [Flow], by key: (Flow) -> String,
+                       bundlePath: (Flow) -> String? = { _ in nil }) -> [FlowGroup] {
         var counts: [String: Int] = [:]
-        for flow in flows { counts[key(flow), default: 0] += 1 }
+        var paths: [String: String] = [:]
+        for flow in flows {
+            let k = key(flow)
+            counts[k, default: 0] += 1
+            if paths[k] == nil, let path = bundlePath(flow) { paths[k] = path }
+        }
         return counts
             .sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
-            .map { FlowGroup(name: $0.key, count: $0.value) }
+            .map { FlowGroup(name: $0.key, count: $0.value, bundlePath: paths[$0.key]) }
     }
 }
 
@@ -62,10 +70,13 @@ public final class InspectorViewModel: ObservableObject {
 public struct FlowGroup: Identifiable, Hashable {
     public let name: String
     public let count: Int
+    /// `.app` bundle path when the group is a resolved local process (macOS).
+    public let bundlePath: String?
     public var id: String { name }
-    public init(name: String, count: Int) {
+    public init(name: String, count: Int, bundlePath: String? = nil) {
         self.name = name
         self.count = count
+        self.bundlePath = bundlePath
     }
 }
 

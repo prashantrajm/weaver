@@ -20,7 +20,9 @@ Intel. The iOS app is coming soon.
   when capture starts (one admin prompt) and restored when it stops or the app
   quits. Turn off "This Mac" in the toolbar to capture other devices only.
 - HTTPS decryption via a per-install root CA generated on your machine
-- Traffic grouped by client app and by domain, with live filtering and search
+- Traffic grouped by client app and by domain, with live filtering and search.
+  On the Mac itself, apps are identified by their actual process (Safari,
+  Chrome, curl…) with real icons, not guessed from the User-Agent
 - Request/response inspector with syntax-highlighted, collapsible bodies
 - HAR export
 - Standalone on-device capture on iOS — no desktop, no jailbreak *(coming soon)*

@@ -65,6 +65,9 @@ final class CaptureController: ObservableObject {
     @Published private(set) var bypassList: [String] = []
 
     private var caManager: CAManager?
+    /// Attributes this Mac's connections to their originating process (by
+    /// PID, not User-Agent). Kept across restarts for its metadata cache.
+    private let processResolver = LocalProcessResolver()
     private var server: ProxyServer?
     private var eventBridge: EventBridge?
 
@@ -117,7 +120,8 @@ final class CaptureController: ObservableObject {
         self.eventBridge = bridge
         self.lanAddress = LocalAddress.primaryIPv4()
         let server = ProxyServer(host: listenHost, port: listenPort,
-                                 ca: caManager.authority, events: bridge, filter: hostFilter)
+                                 ca: caManager.authority, events: bridge, filter: hostFilter,
+                                 clientResolver: processResolver)
         do {
             try server.start()
             self.server = server

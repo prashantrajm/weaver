@@ -22,7 +22,7 @@ struct SidebarView: View {
 
             Section("Apps") {
                 ForEach(apps) { item in
-                    rowLabel(item.name, count: item.count, icon: "app.dashed")
+                    appRow(item)
                         .tag(SidebarSelection.app(item.name))
                         .contextMenu {
                             Button("Clear \(item.name) requests (\(item.count))", role: .destructive) {
@@ -50,16 +50,40 @@ struct SidebarView: View {
         .listStyle(.sidebar)
     }
 
+    /// A resolved local app gets its real icon; User-Agent groups (devices,
+    /// unknown processes) keep the generic glyph.
+    private func appRow(_ item: FlowGroup) -> some View {
+        HStack {
+            if let path = item.bundlePath {
+                Label {
+                    Text(item.name).lineLimit(1)
+                } icon: {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                }
+            } else {
+                Label(item.name, systemImage: "app.dashed").lineLimit(1)
+            }
+            Spacer()
+            countBadge(item.count)
+        }
+    }
+
     private func rowLabel(_ name: String, count: Int, icon: String) -> some View {
         HStack {
             Label(name, systemImage: icon)
                 .lineLimit(1)
             Spacer()
-            Text("\(count)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+            countBadge(count)
         }
+    }
+
+    private func countBadge(_ count: Int) -> some View {
+        Text("\(count)")
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .background(Capsule().fill(Color.secondary.opacity(0.15)))
     }
 }
