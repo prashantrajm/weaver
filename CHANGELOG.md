@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to Weaver. The macOS release workflow publishes the section
-matching `CFBundleShortVersionString` as the GitHub release notes, so keep the
-top section for the version currently in `Info.plist`.
+All notable changes to Weaver. `apple/scripts/publish-release.sh` uses the
+section matching `CFBundleShortVersionString` as the GitHub release notes, so
+keep the top section for the version currently in `Info.plist`.
 
 ## 0.2.0
 
@@ -18,12 +18,6 @@ top section for the version currently in `Info.plist`.
   resolved to the app that opened them by PID, not guessed from the
   User-Agent. Safari's and Chrome's networking helpers roll up to their app,
   CLI tools keep their own name, and the sidebar shows the real app icon.
-
-### Changed
-
-- Release builds are now produced by GitHub Actions on every merge to `main`
-  whose version has no release yet: build, Developer ID sign, notarize,
-  staple, DMG, GitHub release.
 
 ## 0.1.0
 
